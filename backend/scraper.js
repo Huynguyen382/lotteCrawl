@@ -73,8 +73,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function buildUrl(targetUrl) {
     const apiKey = process.env.SCRAPER_API_KEY;
     if (apiKey) {
+        console.log(`[proxy] Dùng ScraperAPI cho: ${targetUrl}`);
         return `http://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&country_code=vn`;
     }
+    console.log(`[direct] Gọi thẳng: ${targetUrl}`);
     return targetUrl;
 }
 
