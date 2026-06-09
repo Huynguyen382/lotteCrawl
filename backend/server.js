@@ -71,11 +71,35 @@ app.get('/api/scrape-stream', async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Tắt nginx buffering nếu có
     res.flushHeaders();
 
     const sendEvent = (type, data) => {
-        res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+        try {
+            if (!res.writableEnded) {
+                res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+            }
+        } catch (e) {
+            console.error('Failed to send event:', e.message);
+        }
     };
+
+    // Keep-alive để tránh timeout
+    const keepAliveInterval = setInterval(() => {
+        try {
+            if (!res.writableEnded) {
+                res.write(': keep-alive\n\n');
+            }
+        } catch (e) {
+            clearInterval(keepAliveInterval);
+        }
+    }, 15000); // Ping mỗi 15 giây
+
+    // Cleanup khi client ngắt kết nối
+    req.on('close', () => {
+        console.log('Client disconnected, cleaning up...');
+        clearInterval(keepAliveInterval);
+    });
 
     try {
         sendEvent('log', { message: 'Đang kết nối đến hệ thống Vietlott...' });
@@ -121,8 +145,11 @@ app.get('/api/scrape-stream', async (req, res) => {
             try {
                 const drawDetail = await fetchDrawDetail(game, id, true);
                 results.push(drawDetail);
+                console.log(`✓ Scraped draw #${id} successfully`);
             } catch (err) {
+                console.error(`✗ Failed to scrape draw #${id}:`, err.message, err.stack);
                 sendEvent('log', { message: `Cảnh báo: Không thể tải kỳ quay #${id}: ${err.message}` });
+                // Tiếp tục với kỳ tiếp theo thay vì crash
             }
         }
 
@@ -132,10 +159,12 @@ app.get('/api/scrape-stream', async (req, res) => {
             totalCrawled: results.length,
             results 
         });
+        clearInterval(keepAliveInterval);
         res.end();
     } catch (error) {
         console.error('SSE Error:', error);
         sendEvent('error', { message: `Lỗi hệ thống: ${error.message}` });
+        clearInterval(keepAliveInterval);
         res.end();
     }
 });
