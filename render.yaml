@@ -1,0 +1,28 @@
+services:
+  # Backend Service
+  - type: web
+    name: vietlott-backend
+    runtime: node
+    rootDir: ./backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        sync: false
+    healthCheckPath: /api/latest?game=645
+
+  # Frontend Service (Static Site)
+  - type: web
+    name: vietlott-frontend
+    runtime: static
+    rootDir: ./frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_BACKEND_URL
+        fromService:
+          type: web
+          name: vietlott-backend
+          envVarKey: RENDER_EXTERNAL_URL
