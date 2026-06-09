@@ -1,13 +1,20 @@
-// Đọc từ environment variable được inject lúc build
+// Ưu tiên đọc từ environment variable được inject lúc build (Vite)
 // Trên Render: set VITE_BACKEND_URL = https://vietlott-backend-ptzh.onrender.com
-// Local: tạo file .env với VITE_BACKEND_URL=http://localhost:5500
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+// Local: tạo file frontend/.env với VITE_BACKEND_URL=http://localhost:5500
 
-if (!BACKEND_URL) {
+const ENV_BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
+// Nếu không có env var:
+//   - Môi trường dev (localhost) → dùng localhost:5500
+//   - Môi trường production (HTTPS) → dùng URL backend trên Render
+const FALLBACK = import.meta.env.DEV
+  ? 'http://localhost:5500'
+  : 'https://vietlott-backend-ptzh.onrender.com';
+
+if (!ENV_BACKEND_URL) {
   console.warn(
-    '[config] VITE_BACKEND_URL chưa được set! ' +
-    'Tạo file frontend/.env với nội dung: VITE_BACKEND_URL=http://localhost:5500'
+    `[config] VITE_BACKEND_URL chưa được set! Dùng fallback: ${FALLBACK}`
   );
 }
 
-export const API_BASE = BACKEND_URL || 'http://localhost:5500';
+export const API_BASE = ENV_BACKEND_URL || FALLBACK;
