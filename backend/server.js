@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const ExcelJS = require('exceljs');
-const { fetchLatestDrawInfo, fetchDrawDetail, findDrawIdForDate, cache } = require('./scraper');
+const { fetchLatestDrawInfo, fetchDrawDetail, findDrawIdForDate, fetchWithRetry, cache } = require('./scraper');
 
 const app = express();
 const PORT = process.env.PORT || 5500;
@@ -18,9 +18,30 @@ app.get('/', (req, res) => {
             'GET /api/latest?game=645',
             'GET /api/latest?game=655',
             'GET /api/scrape-stream?game=645&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD',
-            'GET /api/export?game=645&startId=1&endId=100'
+            'GET /api/export?game=645&startId=1&endId=100',
+            'GET /api/debug-html?game=655&id=01356  ← xem HTML thô'
         ]
     });
+});
+
+// Debug route: xem HTML thô từ Vietlott để kiểm tra selector
+app.get('/api/debug-html', async (req, res) => {
+    const { game, id } = req.query;
+    if (!game || !id) return res.status(400).json({ error: 'Cần game và id' });
+    try {
+        const url = `https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/${game}?id=${id}&nocatche=1`;
+        const response = await fetchWithRetry(url);
+        const cheerio = require('cheerio');
+        const $ = cheerio.load(response.data);
+        res.json({
+            bong_tron_count: $('.bong_tron').length,
+            bong_tron_small_count: $('.bong_tron.small').length,
+            bong_tron_texts: $('.bong_tron').map((i, el) => $(el).text().trim()).get(),
+            bong_tron_small_texts: $('.bong_tron.small').map((i, el) => $(el).text().trim()).get(),
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // 1. Get latest draw info

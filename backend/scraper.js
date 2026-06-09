@@ -352,5 +352,6 @@ module.exports = {
     fetchLatestDrawInfo,
     fetchDrawDetail,
     findDrawIdForDate,
+    fetchWithRetry,
     cache
 };
