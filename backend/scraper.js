@@ -82,7 +82,7 @@ function buildUrl(targetUrl) {
 
 // Axios instance
 const axiosInstance = axios.create({
-    timeout: 30000,
+    timeout: 60000,  // 60s - ScraperAPI có thể chậm
     maxRedirects: 5,
     validateStatus: (status) => status < 500,
 });
@@ -176,7 +176,9 @@ async function fetchDrawDetail(gameType, drawId, useCache = true) {
     const url = `https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/${gameType}?id=${paddedId}&nocatche=1`;
     
     // Add small delay to prevent blocking
-    await sleep(300);
+    // Dùng ScraperAPI thì cần delay lâu hơn do rate limit
+    const delayMs = process.env.SCRAPER_API_KEY ? 1500 : 300;
+    await sleep(delayMs);
 
     try {
         const response = await fetchWithRetry(url);
