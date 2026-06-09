@@ -175,6 +175,12 @@ function App() {
             SCRAPER
           </h1>
           <p>Hệ thống cào và quản lý dữ liệu lịch sử xổ số điện toán chuyên nghiệp</p>
+          {/* Debug: chỉ hiển thị khi VITE_BACKEND_URL chưa được set */}
+          {!import.meta.env.VITE_BACKEND_URL && (
+            <p style={{ color: 'red', fontSize: '0.75rem', marginTop: '4px' }}>
+              ⚠️ VITE_BACKEND_URL chưa được set! API đang trỏ về: {API_BASE}
+            </p>
+          )}
         </div>
         {latestInfo && (
           <div className="glass-panel" style={{ padding: '10px 18px', fontSize: '0.85rem' }}>
