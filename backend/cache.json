@@ -405,6 +405,141 @@
       ],
       "scrapedAt": "2026-06-06T08:59:02.847Z"
     },
+    "1282": {
+      "drawId": 1282,
+      "drawIdStr": "01282",
+      "dateStr": "27/11/2024",
+      "dateYmd": "2024-11-27",
+      "numbers": [
+        "06",
+        "21",
+        "24",
+        "31",
+        "42",
+        "44"
+      ],
+      "prizes": [
+        {
+          "name": "Jackpot",
+          "matching": "O O O O O O",
+          "count": 0,
+          "valueStr": "13.588.912.500",
+          "value": 13588912500
+        },
+        {
+          "name": "Giải Nhất",
+          "matching": "O O O O O",
+          "count": 11,
+          "valueStr": "10.000.000",
+          "value": 10000000
+        },
+        {
+          "name": "Giải Nhì",
+          "matching": "O O O O",
+          "count": 908,
+          "valueStr": "300.000",
+          "value": 300000
+        },
+        {
+          "name": "Giải Ba",
+          "matching": "O O O",
+          "count": 15006,
+          "valueStr": "30.000",
+          "value": 30000
+        }
+      ],
+      "scrapedAt": "2026-06-09T16:18:21.292Z"
+    },
+    "1294": {
+      "drawId": 1294,
+      "drawIdStr": "01294",
+      "dateStr": "25/12/2024",
+      "dateYmd": "2024-12-25",
+      "numbers": [
+        "08",
+        "13",
+        "20",
+        "25",
+        "28",
+        "39"
+      ],
+      "prizes": [
+        {
+          "name": "Jackpot",
+          "matching": "O O O O O O",
+          "count": 0,
+          "valueStr": "38.615.657.500",
+          "value": 38615657500
+        },
+        {
+          "name": "Giải Nhất",
+          "matching": "O O O O O",
+          "count": 37,
+          "valueStr": "10.000.000",
+          "value": 10000000
+        },
+        {
+          "name": "Giải Nhì",
+          "matching": "O O O O",
+          "count": 1870,
+          "valueStr": "300.000",
+          "value": 300000
+        },
+        {
+          "name": "Giải Ba",
+          "matching": "O O O",
+          "count": 31943,
+          "valueStr": "30.000",
+          "value": 30000
+        }
+      ],
+      "scrapedAt": "2026-06-09T16:19:05.578Z"
+    },
+    "1306": {
+      "drawId": 1306,
+      "drawIdStr": "01306",
+      "dateStr": "22/01/2025",
+      "dateYmd": "2025-01-22",
+      "numbers": [
+        "03",
+        "21",
+        "26",
+        "29",
+        "32",
+        "33"
+      ],
+      "prizes": [
+        {
+          "name": "Jackpot",
+          "matching": "O O O O O O",
+          "count": 0,
+          "valueStr": "100.732.063.000",
+          "value": 100732063000
+        },
+        {
+          "name": "Giải Nhất",
+          "matching": "O O O O O",
+          "count": 69,
+          "valueStr": "10.000.000",
+          "value": 10000000
+        },
+        {
+          "name": "Giải Nhì",
+          "matching": "O O O O",
+          "count": 3871,
+          "valueStr": "300.000",
+          "value": 300000
+        },
+        {
+          "name": "Giải Ba",
+          "matching": "O O O",
+          "count": 62629,
+          "valueStr": "30.000",
+          "value": 30000
+        }
+      ],
+      "scrapedAt": "2026-06-09T16:18:36.063Z"
+    },
     "1330": {
       "drawId": 1330,
       "drawIdStr": "01330",
@@ -539,6 +674,51 @@
         }
       ],
       "scrapedAt": "2026-06-06T09:29:43.143Z"
+    },
+    "1449": {
+      "drawId": 1449,
+      "drawIdStr": "01449",
+      "dateStr": "24/12/2025",
+      "dateYmd": "2025-12-24",
+      "numbers": [
+        "15",
+        "19",
+        "31",
+        "35",
+        "43",
+        "45"
+      ],
+      "prizes": [
+        {
+          "name": "Jackpot",
+          "matching": "O O O O O O",
+          "count": 1,
+          "valueStr": "21.520.487.000",
+          "value": 21520487000
+        },
+        {
+          "name": "Giải Nhất",
+          "matching": "O O O O O",
+          "count": 34,
+          "valueStr": "10.000.000",
+          "value": 10000000
+        },
+        {
+          "name": "Giải Nhì",
+          "matching": "O O O O",
+          "count": 1310,
+          "valueStr": "300.000",
+          "value": 300000
+        },
+        {
+          "name": "Giải Ba",
+          "matching": "O O O",
+          "count": 21043,
+          "valueStr": "30.000",
+          "value": 30000
+        }
+      ],
+      "scrapedAt": "2026-06-09T16:19:43.374Z"
     },
     "1451": {
       "drawId": 1451,
@@ -4380,6 +4560,112 @@
         }
       ],
       "scrapedAt": "2026-06-09T16:16:01.214Z"
+    },
+    "1355": {
+      "drawId": 1355,
+      "drawIdStr": "01355",
+      "dateStr": "06/06/2026",
+      "dateYmd": "2026-06-06",
+      "numbers": [
+        "03",
+        "11",
+        "16",
+        "37",
+        "39",
+        "41",
+        "28"
+      ],
+      "prizes": [
+        {
+          "name": "Jackpot 1",
+          "matching": "O O O O O O",
+          "count": 0,
+          "valueStr": "39.411.370.650",
+          "value": 39411370650
+        },
+        {
+          "name": "Jackpot 2",
+          "matching": "O O O O O | O",
+          "count": 0,
+          "valueStr": "3.446.645.300",
+          "value": 3446645300
+        },
+        {
+          "name": "Giải Nhất",
+          "matching": "O O O O O",
+          "count": 11,
+          "valueStr": "40.000.000",
+          "value": 40000000
+        },
+        {
+          "name": "Giải Nhì",
+          "matching": "O O O O",
+          "count": 854,
+          "valueStr": "500.000",
+          "value": 500000
+        },
+        {
+          "name": "Giải Ba",
+          "matching": "O O O",
+          "count": 16434,
+          "valueStr": "50.000",
+          "value": 50000
+        }
+      ],
+      "scrapedAt": "2026-06-09T16:17:22.944Z"
+    },
+    "1356": {
+      "drawId": 1356,
+      "drawIdStr": "01356",
+      "dateStr": "09/06/2026",
+      "dateYmd": "2026-06-09",
+      "numbers": [
+        "06",
+        "08",
+        "18",
+        "27",
+        "32",
+        "34",
+        "35"
+      ],
+      "prizes": [
+        {
+          "name": "Jackpot 1",
+          "matching": "O O O O O O",
+          "count": 0,
+          "valueStr": "41.504.451.150",
+          "value": 41504451150
+        },
+        {
+          "name": "Jackpot 2",
+          "matching": "O O O O O | O",
+          "count": 0,
+          "valueStr": "3.679.209.800",
+          "value": 3679209800
+        },
+        {
+          "name": "Giải Nhất",
+          "matching": "O O O O O",
+          "count": 17,
+          "valueStr": "40.000.000",
+          "value": 40000000
+        },
+        {
+          "name": "Giải Nhì",
+          "matching": "O O O O",
+          "count": 1078,
+          "valueStr": "500.000",
+          "value": 500000
+        },
+        {
+          "name": "Giải Ba",
+          "matching": "O O O",
+          "count": 20777,
+          "valueStr": "50.000",
+          "value": 50000
+        }
+      ],
+      "scrapedAt": "2026-06-09T16:17:38.700Z"
     }
   }
 }
