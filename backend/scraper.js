@@ -69,25 +69,38 @@ const HEADERS = {
 // Sleep helper
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Axios instance với config chống bị block
+// Wrap URL qua ScraperAPI nếu có API key (tránh bị Vietlott chặn IP)
+function buildUrl(targetUrl) {
+    const apiKey = process.env.SCRAPER_API_KEY;
+    if (apiKey) {
+        return `http://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&country_code=vn`;
+    }
+    return targetUrl;
+}
+
+// Axios instance
 const axiosInstance = axios.create({
-    timeout: 15000,
-    headers: HEADERS,
+    timeout: 30000,
     maxRedirects: 5,
-    validateStatus: (status) => status < 500, // chấp nhận mọi status < 500
+    validateStatus: (status) => status < 500,
 });
 
 // Retry wrapper - thử lại tối đa 3 lần nếu thất bại
 async function fetchWithRetry(url, retries = 3) {
+    const finalUrl = buildUrl(url);
+    const useProxy = !!process.env.SCRAPER_API_KEY;
+
     for (let i = 0; i < retries; i++) {
         try {
-            const response = await axiosInstance.get(url);
+            const response = await axiosInstance.get(finalUrl, {
+                headers: useProxy ? {} : HEADERS, // ScraperAPI tự set headers
+            });
             if (response.status === 200) return response;
             throw new Error(`HTTP ${response.status}`);
         } catch (err) {
             if (i < retries - 1) {
-                const delay = (i + 1) * 1000; // 1s, 2s, 3s
-                console.log(`Retry ${i + 1}/${retries} for ${url} sau ${delay}ms...`);
+                const delay = (i + 1) * 1000;
+                console.log(`Retry ${i + 1}/${retries} cho ${url} sau ${delay}ms...`);
                 await sleep(delay);
             } else {
                 throw err;
