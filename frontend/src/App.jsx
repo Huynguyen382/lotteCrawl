@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { API_BASE } from './config';
 
 function App() {
   const [game, setGame] = useState('645'); // '645' for Mega, '655' for Power
@@ -42,11 +43,7 @@ function App() {
 
   const fetchLatestInfo = async () => {
     try {
-      const backendUrl = process.env.NODE_ENV === 'production' 
-        ? `${window.location.origin}/api` 
-        : 'http://localhost:5500';
-        
-      const response = await fetch(`${backendUrl}/latest?game=${game}`);
+      const response = await fetch(`${API_BASE}/api/latest?game=${game}`);
       if (response.ok) {
         const data = await response.json();
         setLatestInfo(data);
@@ -87,10 +84,8 @@ function App() {
       eventSourceRef.current.close();
     }
 
-    const backendUrl = process.env.NODE_ENV === 'production' 
-      ? `${window.location.origin}/api` 
-      : 'http://localhost:5500';
-    const url = `${backendUrl}/scrape-stream?game=${game}&startDate=${startDate}&endDate=${endDate}`;
+    // Sử dụng environment variable hoặc fallback
+    const url = `${API_BASE}/api/scrape-stream?game=${game}&startDate=${startDate}&endDate=${endDate}`;
     const es = new EventSource(url);
     eventSourceRef.current = es;
 
@@ -162,10 +157,7 @@ function App() {
 
   const handleDownloadExcel = () => {
     if (!scrapedRange) return;
-    const backendUrl = process.env.NODE_ENV === 'production' 
-      ? `${window.location.origin}/api` 
-      : 'http://localhost:5500';
-    const url = `${backendUrl}/export?game=${game}&startId=${scrapedRange.startId}&endId=${scrapedRange.endId}`;
+    const url = `${API_BASE}/api/export?game=${game}&startId=${scrapedRange.startId}&endId=${scrapedRange.endId}`;
     window.location.href = url;
   };
 
