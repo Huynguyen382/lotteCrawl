@@ -72,11 +72,20 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Wrap URL qua ScraperAPI nếu có API key (tránh bị Vietlott chặn IP)
 function buildUrl(targetUrl) {
     const apiKey = process.env.SCRAPER_API_KEY;
-    if (apiKey) {
-        console.log(`[proxy] Dùng ScraperAPI cho: ${targetUrl}`);
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    // Chỉ dùng proxy khi production CÓ key
+    if (isProduction && apiKey) {
+        console.log(`[proxy] Production + API key → Dùng ScraperAPI cho: ${targetUrl}`);
         return `http://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&country_code=vn`;
     }
-    console.log(`[direct] Gọi thẳng: ${targetUrl}`);
+    
+    // Dev (localhost) hoặc production không có key → gọi thẳng
+    if (!isProduction) {
+        console.log(`[direct] Dev mode → Gọi thẳng: ${targetUrl} (IP VN không bị block)`);
+    } else {
+        console.log(`[direct] Production không có SCRAPER_API_KEY → Gọi thẳng: ${targetUrl}`);
+    }
     return targetUrl;
 }
 
