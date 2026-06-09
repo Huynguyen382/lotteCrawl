@@ -1,0 +1,5 @@
+{
+  "ignore": ["cache.json", "*.xlsx", "*.log"],
+  "watch": ["*.js"],
+  "exec": "node server.js"
+}
