@@ -186,7 +186,8 @@ async function fetchDrawDetail(gameType, drawId, useCache = true) {
     
     // Add small delay to prevent blocking
     // Dùng ScraperAPI thì cần delay lâu hơn do rate limit
-    const delayMs = process.env.SCRAPER_API_KEY ? 1500 : 300;
+    // Với concurrency thì delay có thể giảm xuống
+    const delayMs = process.env.SCRAPER_API_KEY ? 800 : 100;
     await sleep(delayMs);
 
     try {

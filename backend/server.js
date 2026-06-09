@@ -131,32 +131,56 @@ app.get('/api/scrape-stream', async (req, res) => {
         sendEvent('start', { startId, endId, totalDraws });
 
         const results = [];
-        // 3. Fetch details for each draw
+        // 3. Fetch details for each draw với concurrency
+        const CONCURRENCY = 5; // Số request đồng thời (tăng nếu cần)
+        const queue = [];
+        
         for (let id = startId; id <= endId; id++) {
-            const progressPercent = Math.round(((id - startId) / totalDraws) * 100);
-            sendEvent('progress', { 
-                currentId: id, 
-                progress: id - startId, 
-                total: totalDraws, 
-                percent: progressPercent,
-                message: `Đang tải chi tiết kỳ quay #${id}...`
-            });
-
+            queue.push(id);
+        }
+        
+        let completed = 0;
+        const errors = [];
+        
+        // Hàm fetch 1 kỳ
+        const fetchOne = async (id) => {
             try {
                 const drawDetail = await fetchDrawDetail(game, id, true);
                 results.push(drawDetail);
                 console.log(`✓ Scraped draw #${id} successfully`);
+                return { success: true, id };
             } catch (err) {
-                console.error(`✗ Failed to scrape draw #${id}:`, err.message, err.stack);
+                console.error(`✗ Failed to scrape draw #${id}:`, err.message);
+                errors.push({ id, error: err.message });
                 sendEvent('log', { message: `Cảnh báo: Không thể tải kỳ quay #${id}: ${err.message}` });
-                // Tiếp tục với kỳ tiếp theo thay vì crash
+                return { success: false, id };
+            } finally {
+                completed++;
+                const progressPercent = Math.round((completed / totalDraws) * 100);
+                sendEvent('progress', { 
+                    currentId: id, 
+                    progress: completed, 
+                    total: totalDraws, 
+                    percent: progressPercent,
+                    message: `Đang tải chi tiết kỳ quay #${id}... (${completed}/${totalDraws})`
+                });
             }
+        };
+        
+        // Fetch song song với giới hạn concurrency
+        while (queue.length > 0) {
+            const batch = queue.splice(0, CONCURRENCY);
+            await Promise.all(batch.map(id => fetchOne(id)));
         }
 
+        // Sắp xếp kết quả theo drawId trước khi trả về
+        results.sort((a, b) => a.drawId - b.drawId);
+        
         sendEvent('complete', { 
             startId, 
             endId, 
             totalCrawled: results.length,
+            totalErrors: errors.length,
             results 
         });
         clearInterval(keepAliveInterval);
