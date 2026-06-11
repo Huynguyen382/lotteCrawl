@@ -126,7 +126,10 @@ async function fetchWithRetry(url, retries = 3) {
         try {
             const config = {
                 // Khi dùng ScraperAPI hoặc GAS, không cần gửi headers giả lập vì proxy tự xử lý
-                headers: (useScraperApi || useGasProxy) ? {} : HEADERS,
+                // Thêm bypass-tunnel-reminder để vượt qua cảnh báo của localtunnel/ngrok
+                headers: (useScraperApi || useGasProxy) ? {
+                    'bypass-tunnel-reminder': 'true'
+                } : HEADERS,
             };
             if (agent) {
                 config.httpsAgent = agent;
