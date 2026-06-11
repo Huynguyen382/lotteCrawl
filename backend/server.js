@@ -451,8 +451,35 @@ app.get('/api/export', async (req, res) => {
     }
 });
 
+// Tự động kiểm tra và cào kỳ quay mới để cập nhật cache
+async function autoUpdateCache() {
+    try {
+        console.log('[auto-crawl] Bắt đầu tự động kiểm tra kỳ quay mới trên Vietlott...');
+        for (const game of ['645', '655']) {
+            const latestInfo = await fetchLatestDrawInfo(game);
+            const latestId = latestInfo.drawId;
+            
+            // Nếu kỳ mới nhất chưa có trong cache -> cào chi tiết và lưu
+            if (!cache[game] || !cache[game][latestId]) {
+                console.log(`[auto-crawl] Phát hiện kỳ mới #${latestId} của game ${game} chưa có trong cache. Tiến hành cào...`);
+                await fetchDrawDetail(game, latestId, false); // Cào và lưu vào cache
+                console.log(`[auto-crawl] Tự động cập nhật cache thành công kỳ #${latestId} cho game ${game}`);
+            }
+        }
+        console.log('[auto-crawl] Hoàn tất kiểm tra kỳ quay mới.');
+    } catch (e) {
+        console.error('[auto-crawl] Lỗi tự động cập nhật cache:', e.message);
+    }
+}
+
 app.listen(PORT, () => {
     console.log(`Backend server is running on http://localhost:${PORT}`);
+
+    // Chạy kiểm tra kỳ quay mới lần đầu tiên sau 10 giây khi server khởi động
+    setTimeout(autoUpdateCache, 10000);
+
+    // Chạy tự động cập nhật cache định kỳ mỗi 1 tiếng
+    setInterval(autoUpdateCache, 60 * 60 * 1000);
 
     // Self-ping mỗi 14 phút để tránh Render sleep (chỉ trên production)
     if (process.env.NODE_ENV === 'production' && process.env.RENDER_EXTERNAL_URL) {
