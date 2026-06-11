@@ -25,6 +25,7 @@ function App() {
   const [results, setResults] = useState([]);
   const [scrapedRange, setScrapedRange] = useState(null);
   const [latestInfo, setLatestInfo] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const logContainerRef = useRef(null);
   const eventSourceRef = useRef(null);
@@ -160,6 +161,33 @@ function App() {
     const url = `${API_BASE}/api/export?game=${game}&startId=${scrapedRange.startId}&endId=${scrapedRange.endId}`;
     window.location.href = url;
   };
+
+  // Lọc kết quả theo điều kiện tìm kiếm (số, bộ số, kỳ quay, ngày quay)
+  const filteredResults = results.filter((draw) => {
+    if (!searchQuery.trim()) return true;
+
+    // Tách các từ khóa tìm kiếm bằng dấu cách, dấu phẩy hoặc dấu gạch ngang
+    const queryParts = searchQuery.toLowerCase().split(/[\s,.-]+/).filter(Boolean);
+    if (queryParts.length === 0) return true;
+
+    // Kiểm tra xem kỳ quay có thỏa mãn TẤT CẢ từ khóa tìm kiếm không
+    return queryParts.every((part) => {
+      // 1. Khớp số trúng thưởng (so sánh trị số chính xác, ví dụ '05' và '5' khớp nhau)
+      const partNum = parseInt(part, 10);
+      const hasNumber = !isNaN(partNum) && draw.numbers.some((num) => {
+        return parseInt(num, 10) === partNum;
+      });
+      if (hasNumber) return true;
+
+      // 2. Khớp mã kỳ quay
+      if (draw.drawIdStr.includes(part) || String(draw.drawId).includes(part)) return true;
+
+      // 3. Khớp ngày quay
+      if (draw.dateStr.includes(part)) return true;
+
+      return false;
+    });
+  });
 
   return (
     <div className="app-container">
@@ -313,6 +341,66 @@ function App() {
               </span>
             )}
           </div>
+ 
+          {/* Search Box */}
+          {results.length > 0 && (
+            <div className="search-container" style={{ marginBottom: '16px', padding: '0 8px' }}>
+              <div className="input-group" style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm kỳ quay, ngày, số (ví dụ: 15) hoặc bộ số (ví dụ: 15 23 34)..."
+                  className="input-field"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{ paddingLeft: '36px', width: '100%' }}
+                />
+                <svg 
+                  width="18" 
+                  height="18" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  strokeWidth="2" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round"
+                  style={{
+                    position: 'absolute',
+                    left: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--text-muted)'
+                  }}
+                >
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                {searchQuery && (
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      fontSize: '1.2rem',
+                      lineHeight: '1'
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              {searchQuery && (
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  Tìm thấy <strong>{filteredResults.length}</strong> / {results.length} kỳ quay khớp điều kiện.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Scrape Progress Bar */}
           {isScraping && (
@@ -351,7 +439,7 @@ function App() {
                   )}
                 </thead>
                 <tbody>
-                  {results.slice().reverse().map((draw) => {
+                  {filteredResults.slice().reverse().map((draw) => {
                     if (game === '645') {
                       const jackpot = draw.prizes.find(p => p.name.toLowerCase().includes('jackpot')) || { valueStr: '0', count: 0 };
                       return (
