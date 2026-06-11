@@ -2,6 +2,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 const CACHE_FILE = path.join(__dirname, 'cache.json');
 let cache = { "645": {}, "655": {} };
@@ -69,29 +70,37 @@ const HEADERS = {
 // Sleep helper
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Wrap URL qua ScraperAPI nếu có API key (tránh bị Vietlott chặn IP)
+// Wrap URL qua Proxy (Google Apps Script, ScraperAPI, ...) để tránh bị Vietlott chặn IP
 function buildUrl(targetUrl) {
+    const gasProxyUrl = process.env.GAS_PROXY_URL;
     const apiKey = process.env.SCRAPER_API_KEY;
     const isProduction = process.env.NODE_ENV === 'production';
     
-    // Chỉ dùng proxy khi production CÓ key
+    // 1. Ưu tiên Google Apps Script Proxy
+    if (gasProxyUrl) {
+        console.log(`[proxy] Sử dụng Google Apps Script Proxy cho: ${targetUrl}`);
+        const baseProxy = gasProxyUrl.replace(/\/+$/, '');
+        return `${baseProxy}?url=${encodeURIComponent(targetUrl)}`;
+    }
+    
+    // 2. Tiếp theo: ScraperAPI (chỉ dùng khi production và có key)
     if (isProduction && apiKey) {
         console.log(`[proxy] Production + API key → Dùng ScraperAPI cho: ${targetUrl}`);
         return `http://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&country_code=vn`;
     }
     
-    // Dev (localhost) hoặc production không có key → gọi thẳng
+    // 3. Dev hoặc production không có proxy → gọi thẳng
     if (!isProduction) {
         console.log(`[direct] Dev mode → Gọi thẳng: ${targetUrl} (IP VN không bị block)`);
     } else {
-        console.log(`[direct] Production không có SCRAPER_API_KEY → Gọi thẳng: ${targetUrl}`);
+        console.log(`[direct] Production không có proxy → Gọi thẳng: ${targetUrl}`);
     }
     return targetUrl;
 }
 
 // Axios instance
 const axiosInstance = axios.create({
-    timeout: 60000,  // 60s - ScraperAPI có thể chậm
+    timeout: 60000,  // 60s - ScraperAPI/GAS có thể chậm
     maxRedirects: 5,
     validateStatus: (status) => status < 500,
 });
@@ -99,13 +108,31 @@ const axiosInstance = axios.create({
 // Retry wrapper - thử lại tối đa 3 lần nếu thất bại
 async function fetchWithRetry(url, retries = 3) {
     const finalUrl = buildUrl(url);
-    const useProxy = !!process.env.SCRAPER_API_KEY;
+    const useGasProxy = !!process.env.GAS_PROXY_URL;
+    const useScraperApi = !useGasProxy && !!process.env.SCRAPER_API_KEY;
+    const httpProxy = process.env.HTTP_PROXY;
+
+    let agent = undefined;
+    if (!useGasProxy && !useScraperApi && httpProxy) {
+        try {
+            agent = new HttpsProxyAgent(httpProxy);
+            console.log(`[proxy] Sử dụng HTTP Proxy: ${httpProxy}`);
+        } catch (e) {
+            console.error('Lỗi khởi tạo HTTP Proxy Agent:', e.message);
+        }
+    }
 
     for (let i = 0; i < retries; i++) {
         try {
-            const response = await axiosInstance.get(finalUrl, {
-                headers: useProxy ? {} : HEADERS, // ScraperAPI tự set headers
-            });
+            const config = {
+                // Khi dùng ScraperAPI hoặc GAS, không cần gửi headers giả lập vì proxy tự xử lý
+                headers: (useScraperApi || useGasProxy) ? {} : HEADERS,
+            };
+            if (agent) {
+                config.httpsAgent = agent;
+            }
+
+            const response = await axiosInstance.get(finalUrl, config);
             if (response.status === 200) return response;
             throw new Error(`HTTP ${response.status}`);
         } catch (err) {
