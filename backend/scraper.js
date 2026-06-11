@@ -70,26 +70,33 @@ const HEADERS = {
 // Sleep helper
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Wrap URL qua Proxy (Google Apps Script, ScraperAPI, ...) để tránh bị Vietlott chặn IP
+// Wrap URL qua Proxy để tránh bị Vietlott chặn IP
 function buildUrl(targetUrl) {
+    const scrapeDoApiKey = process.env.SCRAPEDO_API_KEY;
     const gasProxyUrl = process.env.GAS_PROXY_URL;
-    const apiKey = process.env.SCRAPER_API_KEY;
+    const scraperApiKey = process.env.SCRAPER_API_KEY;
     const isProduction = process.env.NODE_ENV === 'production';
     
-    // 1. Ưu tiên Google Apps Script Proxy
+    // 1. Ưu tiên hàng đầu cho Online 100% bypass Cloudflare: Scrape.do (Free 1,000 requests/tháng)
+    if (scrapeDoApiKey) {
+        console.log(`[proxy] Sử dụng Scrape.do Proxy cho: ${targetUrl}`);
+        return `https://api.scrape.do?token=${scrapeDoApiKey}&url=${encodeURIComponent(targetUrl)}`;
+    }
+    
+    // 2. Google Apps Script Proxy hoặc Local Bridge Proxy
     if (gasProxyUrl) {
-        console.log(`[proxy] Sử dụng Google Apps Script Proxy cho: ${targetUrl}`);
+        console.log(`[proxy] Sử dụng Web/Local Bridge Proxy cho: ${targetUrl}`);
         const baseProxy = gasProxyUrl.replace(/\/+$/, '');
         return `${baseProxy}?url=${encodeURIComponent(targetUrl)}`;
     }
     
-    // 2. Tiếp theo: ScraperAPI (chỉ dùng khi production và có key)
-    if (isProduction && apiKey) {
+    // 3. ScraperAPI (chỉ dùng khi production và có key)
+    if (isProduction && scraperApiKey) {
         console.log(`[proxy] Production + API key → Dùng ScraperAPI cho: ${targetUrl}`);
-        return `http://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&country_code=vn`;
+        return `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(targetUrl)}&country_code=vn`;
     }
     
-    // 3. Dev hoặc production không có proxy → gọi thẳng
+    // 4. Dev hoặc production không cấu hình proxy → gọi thẳng
     if (!isProduction) {
         console.log(`[direct] Dev mode → Gọi thẳng: ${targetUrl} (IP VN không bị block)`);
     } else {
@@ -100,7 +107,7 @@ function buildUrl(targetUrl) {
 
 // Axios instance
 const axiosInstance = axios.create({
-    timeout: 60000,  // 60s - ScraperAPI/GAS có thể chậm
+    timeout: 60000,  // 60s - ScraperAPI/GAS/Scrape.do có thể chậm
     maxRedirects: 5,
     validateStatus: (status) => status < 500,
 });
@@ -108,12 +115,13 @@ const axiosInstance = axios.create({
 // Retry wrapper - thử lại tối đa 3 lần nếu thất bại
 async function fetchWithRetry(url, retries = 3) {
     const finalUrl = buildUrl(url);
-    const useGasProxy = !!process.env.GAS_PROXY_URL;
-    const useScraperApi = !useGasProxy && !!process.env.SCRAPER_API_KEY;
+    const useScrapeDo = !!process.env.SCRAPEDO_API_KEY;
+    const useGasProxy = !useScrapeDo && !!process.env.GAS_PROXY_URL;
+    const useScraperApi = !useScrapeDo && !useGasProxy && !!process.env.SCRAPER_API_KEY;
     const httpProxy = process.env.HTTP_PROXY;
 
     let agent = undefined;
-    if (!useGasProxy && !useScraperApi && httpProxy) {
+    if (!useScrapeDo && !useGasProxy && !useScraperApi && httpProxy) {
         try {
             agent = new HttpsProxyAgent(httpProxy);
             console.log(`[proxy] Sử dụng HTTP Proxy: ${httpProxy}`);
@@ -125,9 +133,8 @@ async function fetchWithRetry(url, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
             const config = {
-                // Khi dùng ScraperAPI hoặc GAS, không cần gửi headers giả lập vì proxy tự xử lý
-                // Thêm bypass-tunnel-reminder để vượt qua cảnh báo của localtunnel/ngrok
-                headers: (useScraperApi || useGasProxy) ? {
+                // Scrape.do, ScraperAPI, GAS tự xử lý headers
+                headers: (useScrapeDo || useScraperApi || useGasProxy) ? {
                     'bypass-tunnel-reminder': 'true'
                 } : HEADERS,
             };
