@@ -170,9 +170,23 @@ function App() {
     const queryParts = searchQuery.toLowerCase().split(/[\s,.-]+/).filter(Boolean);
     if (queryParts.length === 0) return true;
 
-    // Kiểm tra xem kỳ quay có thỏa mãn TẤT CẢ từ khóa tìm kiếm không
+    // Chuyển đổi các từ khóa sang dạng số để kiểm tra
+    const numbersToSearch = queryParts.map(part => parseInt(part, 10));
+    
+    // Kiểm tra xem đây có phải là tìm kiếm BỘ SỐ hay không
+    // Điều kiện: Có từ 2 từ khóa trở lên và tất cả đều là số hợp lệ trong khoảng [1, 55]
+    const isLottoNumbersSearch = queryParts.length > 1 && numbersToSearch.every(num => !isNaN(num) && num >= 1 && num <= 55);
+
+    if (isLottoNumbersSearch) {
+      // BẮT BUỘC so khớp chính xác: toàn bộ các số tìm kiếm phải nằm trong bộ số trúng thưởng
+      return numbersToSearch.every((searchNum) => {
+        return draw.numbers.some((num) => parseInt(num, 10) === searchNum);
+      });
+    }
+
+    // Nếu chỉ có 1 từ khóa hoặc chứa ký tự không phải số Vietlott -> Tìm kiếm tự do (khớp số trúng, kỳ quay, ngày quay)
     return queryParts.every((part) => {
-      // 1. Khớp số trúng thưởng (so sánh trị số chính xác, ví dụ '05' và '5' khớp nhau)
+      // 1. Khớp số trúng thưởng (so sánh trị số chính xác)
       const partNum = parseInt(part, 10);
       const hasNumber = !isNaN(partNum) && draw.numbers.some((num) => {
         return parseInt(num, 10) === partNum;
