@@ -344,22 +344,49 @@ async function getDrawDateYmd(gameType, drawId) {
  * @param {function} onProgress - Progress reporting callback
  */
 async function findDrawIdForDate(gameType, targetDateYmd, boundaryType, latestId, onProgress) {
-    let left = 1;
-    let right = latestId;
+    // Lấy danh sách ID đã có trong cache
+    const cachedIds = Object.keys(cache[gameType] || {}).map(id => parseInt(id, 10)).sort((a, b) => a - b);
+    
+    let minCachedId = 1;
+    let maxCachedId = latestId;
+    let minDateYmd = '';
+    let maxDateYmd = '';
+
+    if (cachedIds.length > 0) {
+        minCachedId = cachedIds[0];
+        maxCachedId = cachedIds[cachedIds.length - 1];
+        if (cache[gameType][minCachedId]) minDateYmd = cache[gameType][minCachedId].dateYmd;
+        if (cache[gameType][maxCachedId]) maxDateYmd = cache[gameType][maxCachedId].dateYmd;
+    }
+
+    // Nếu targetDateYmd nằm ngoài khoảng cache, xử lý nhanh để tránh cào API lãng phí
+    if (minDateYmd && targetDateYmd < minDateYmd) {
+        console.log(`[findId] Target date ${targetDateYmd} cũ hơn ngày cũ nhất trong cache (${minDateYmd}). Trả về kỳ cũ nhất trong cache: #${minCachedId}`);
+        return minCachedId;
+    }
+    if (maxDateYmd && targetDateYmd > maxDateYmd) {
+        console.log(`[findId] Target date ${targetDateYmd} mới hơn ngày mới nhất trong cache (${maxDateYmd}). Trả về kỳ mới nhất trong cache: #${maxCachedId}`);
+        return maxCachedId;
+    }
+
+    // Giới hạn phạm vi tìm kiếm nhị phân trong khoảng cache đang có
+    let left = minCachedId;
+    let right = maxCachedId;
     let ans = null;
 
-    let step = 0;
+    if (onProgress) {
+        onProgress(`Tìm kiếm kỳ quay (${boundaryType === 'start' ? 'Bắt đầu' : 'Kết thúc'}): Giới hạn phạm vi trong cache từ #${left} đến #${right}...`);
+    }
+
     while (left <= right) {
-        step++;
         const mid = Math.floor((left + right) / 2);
         
         if (onProgress) {
-            onProgress(`Tìm kiếm kỳ quay (${boundaryType === 'start' ? 'Bắt đầu' : 'Kết thúc'}): Kiểm tra Kỳ #${mid}...`);
+            onProgress(`Tìm kiếm kỳ quay: Kiểm tra Kỳ #${mid}...`);
         }
 
         const midDateYmd = await getDrawDateYmd(gameType, mid);
         if (!midDateYmd) {
-            // If we fail to fetch, adjust boundary slightly
             if (boundaryType === 'start') {
                 left = mid + 1;
             } else {
@@ -371,27 +398,22 @@ async function findDrawIdForDate(gameType, targetDateYmd, boundaryType, latestId
         if (boundaryType === 'start') {
             if (midDateYmd >= targetDateYmd) {
                 ans = mid;
-                right = mid - 1; // Try to find an even smaller ID that is still >= targetDate
+                right = mid - 1;
             } else {
                 left = mid + 1;
             }
         } else { // boundaryType === 'end'
             if (midDateYmd <= targetDateYmd) {
                 ans = mid;
-                left = mid + 1; // Try to find a larger ID that is still <= targetDate
+                left = mid + 1;
             } else {
                 right = mid - 1;
             }
         }
     }
 
-    // Default fallbacks if boundary not found
     if (ans === null) {
-        if (boundaryType === 'start') {
-            ans = 1;
-        } else {
-            ans = latestId;
-        }
+        ans = boundaryType === 'start' ? minCachedId : maxCachedId;
     }
 
     return ans;
