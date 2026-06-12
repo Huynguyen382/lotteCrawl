@@ -26,6 +26,8 @@ function App() {
   const [scrapedRange, setScrapedRange] = useState(null);
   const [latestInfo, setLatestInfo] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('preview');
+  const [sortBy, setSortBy] = useState('number');
 
   const logContainerRef = useRef(null);
   const eventSourceRef = useRef(null);
@@ -209,6 +211,56 @@ function App() {
     return true;
   });
 
+  // Tính toán số kỳ vắng mặt của các số từ 1-45 (Mega) hoặc 1-55 (Power)
+  const getAbsenceStatistics = () => {
+    if (results.length === 0) return [];
+    
+    const maxNum = game === '645' ? 45 : 55;
+    // Sắp xếp kỳ quay giảm dần để duyệt từ mới nhất về cũ nhất
+    const reversedResults = [...results].sort((a, b) => b.drawId - a.drawId);
+    
+    const stats = [];
+    
+    for (let i = 1; i <= maxNum; i++) {
+      const numStr = String(i).padStart(2, '0');
+      
+      const firstSeenIndex = reversedResults.findIndex(draw => {
+        return draw.numbers.some(num => parseInt(num, 10) === i);
+      });
+      
+      if (firstSeenIndex !== -1) {
+        stats.push({
+          number: numStr,
+          absentDraws: firstSeenIndex,
+          lastSeenDrawId: reversedResults[firstSeenIndex].drawIdStr,
+          lastSeenDate: reversedResults[firstSeenIndex].dateStr
+        });
+      } else {
+        stats.push({
+          number: numStr,
+          absentDraws: results.length, // Chưa xuất hiện trong dải dữ liệu đã cào
+          lastSeenDrawId: 'N/A',
+          lastSeenDate: 'Chưa về'
+        });
+      }
+    }
+    
+    return stats;
+  };
+
+  // Sắp xếp kết quả thống kê vắng mặt
+  const getSortedStats = () => {
+    const stats = getAbsenceStatistics();
+    if (sortBy === 'number') {
+      return stats.sort((a, b) => parseInt(a.number, 10) - parseInt(b.number, 10));
+    } else if (sortBy === 'absent-desc') {
+      return stats.sort((a, b) => b.absentDraws - a.absentDraws);
+    } else if (sortBy === 'absent-asc') {
+      return stats.sort((a, b) => a.absentDraws - b.absentDraws);
+    }
+    return stats;
+  };
+
   return (
     <div className="app-container">
       {/* Header */}
@@ -361,67 +413,54 @@ function App() {
               </span>
             )}
           </div>
- 
-          {/* Search Box */}
+
+          {/* Tab Navigation */}
           {results.length > 0 && (
-            <div className="search-container" style={{ marginBottom: '16px', padding: '0 8px' }}>
-              <div className="input-group" style={{ position: 'relative' }}>
-                <input
-                  type="text"
-                  placeholder="Tìm kiếm kỳ quay, ngày, số (ví dụ: 15) hoặc bộ số (ví dụ: 15 23 34)..."
-                  className="input-field"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ paddingLeft: '36px', width: '100%' }}
-                />
-                <svg 
-                  width="18" 
-                  height="18" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                  style={{
-                    position: 'absolute',
-                    left: '12px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    color: 'var(--text-muted)'
-                  }}
-                >
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                {searchQuery && (
-                  <button 
-                    onClick={() => setSearchQuery('')}
-                    style={{
-                      position: 'absolute',
-                      right: '12px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      fontSize: '1.2rem',
-                      lineHeight: '1'
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-              {searchQuery && (
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-                  Tìm thấy <strong>{filteredResults.length}</strong> / {results.length} kỳ quay khớp điều kiện.
-                </div>
-              )}
+            <div className="tabs-navigation" style={{ 
+              display: 'flex', 
+              gap: '12px', 
+              marginBottom: '16px', 
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)', 
+              paddingBottom: '8px' 
+            }}>
+              <button
+                className={`tab-btn ${activeTab === 'preview' ? 'active' : ''}`}
+                onClick={() => setActiveTab('preview')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: activeTab === 'preview' ? 'var(--accent, #e63946)' : 'var(--text-muted, #8d99ae)',
+                  borderBottom: activeTab === 'preview' ? '2px solid var(--accent, #e63946)' : 'none',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '0.95rem'
+                }}
+              >
+                Xem trước dữ liệu
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab('stats');
+                  setSearchQuery(''); // Xóa query search khi qua tab thống kê
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: activeTab === 'stats' ? 'var(--accent, #e63946)' : 'var(--text-muted, #8d99ae)',
+                  borderBottom: activeTab === 'stats' ? '2px solid var(--accent, #e63946)' : 'none',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '0.95rem'
+                }}
+              >
+                Thống kê vắng mặt
+              </button>
             </div>
           )}
-
+ 
           {/* Scrape Progress Bar */}
           {isScraping && (
             <div className="progress-container">
@@ -435,73 +474,209 @@ function App() {
             </div>
           )}
 
-          {/* Results Table */}
+          {/* Tab Content */}
           {results.length > 0 ? (
-            <div className="table-wrapper">
-              <table className="preview-table">
-                <thead>
-                  {game === '645' ? (
-                    <tr>
-                      <th>Kỳ Quay</th>
-                      <th>Ngày Quay</th>
-                      <th>Bộ Số Trúng Thưởng</th>
-                      <th style={{ textAlign: 'right' }}>Giá trị Jackpot</th>
-                      <th style={{ textAlign: 'right' }}>Số người trúng</th>
-                    </tr>
-                  ) : (
-                    <tr>
-                      <th>Kỳ Quay</th>
-                      <th>Ngày Quay</th>
-                      <th>Bộ Số Trúng Thưởng (1-6 | Bonus)</th>
-                      <th style={{ textAlign: 'right' }}>Jackpot 1</th>
-                      <th style={{ textAlign: 'right' }}>Jackpot 2</th>
-                    </tr>
+            activeTab === 'preview' ? (
+              <>
+                {/* Search Box */}
+                <div className="search-container" style={{ marginBottom: '16px', padding: '0 8px' }}>
+                  <div className="input-group" style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      placeholder="Tìm kiếm kỳ quay, ngày, số (ví dụ: 15) hoặc bộ số (ví dụ: 15 23 34)..."
+                      className="input-field"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      style={{ paddingLeft: '36px', width: '100%' }}
+                    />
+                    <svg 
+                      width="18" 
+                      height="18" 
+                      viewBox="0 0 24 24" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      strokeWidth="2" 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round"
+                      style={{
+                        position: 'absolute',
+                        left: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        color: 'var(--text-muted)'
+                      }}
+                    >
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    {searchQuery && (
+                      <button 
+                        onClick={() => setSearchQuery('')}
+                        style={{
+                          position: 'absolute',
+                          right: '12px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontSize: '1.2rem',
+                          lineHeight: '1'
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  {searchQuery && (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                      Tìm thấy <strong>{filteredResults.length}</strong> / {results.length} kỳ quay khớp điều kiện.
+                    </div>
                   )}
-                </thead>
-                <tbody>
-                  {filteredResults.slice().reverse().map((draw) => {
-                    if (game === '645') {
-                      const jackpot = draw.prizes.find(p => p.name.toLowerCase().includes('jackpot')) || { valueStr: '0', count: 0 };
-                      return (
-                        <tr key={draw.drawId}>
-                          <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>#{draw.drawIdStr}</td>
-                          <td>{draw.dateStr}</td>
-                          <td>
-                            <div className="balls-container">
-                              {draw.numbers.map((n, i) => (
-                                <span key={i} className="ball">{n}</span>
-                              ))}
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: '600' }}>{jackpot.valueStr} đ</td>
-                          <td style={{ textAlign: 'right' }}>{jackpot.count}</td>
+                </div>
+
+                {/* Results Table */}
+                <div className="table-wrapper">
+                  <table className="preview-table">
+                    <thead>
+                      {game === '645' ? (
+                        <tr>
+                          <th>Kỳ Quay</th>
+                          <th>Ngày Quay</th>
+                          <th>Bộ Số Trúng Thưởng</th>
+                          <th style={{ textAlign: 'right' }}>Giá trị Jackpot</th>
+                          <th style={{ textAlign: 'right' }}>Số người trúng</th>
                         </tr>
-                      );
-                    } else {
-                      const jp1 = draw.prizes.find(p => p.name.includes('Jackpot 1')) || { valueStr: '0', count: 0 };
-                      const jp2 = draw.prizes.find(p => p.name.includes('Jackpot 2')) || { valueStr: '0', count: 0 };
-                      return (
-                        <tr key={draw.drawId}>
-                          <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>#{draw.drawIdStr}</td>
-                          <td>{draw.dateStr}</td>
-                          <td>
-                            <div className="balls-container">
-                              {draw.numbers.slice(0, 6).map((n, i) => (
-                                <span key={i} className="ball">{n}</span>
-                              ))}
-                              <span style={{ color: 'var(--border-color)', alignSelf: 'center', fontSize: '1.2rem' }}>|</span>
-                              <span className="ball power-bonus">{draw.numbers[6]}</span>
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: '600' }}>{jp1.valueStr} đ ({jp1.count})</td>
-                          <td style={{ textAlign: 'right', fontWeight: '600', color: 'var(--warning)' }}>{jp2.valueStr} đ ({jp2.count})</td>
+                      ) : (
+                        <tr>
+                          <th>Kỳ Quay</th>
+                          <th>Ngày Quay</th>
+                          <th>Bộ Số Trúng Thưởng (1-6 | Bonus)</th>
+                          <th style={{ textAlign: 'right' }}>Jackpot 1</th>
+                          <th style={{ textAlign: 'right' }}>Jackpot 2</th>
                         </tr>
-                      );
-                    }
-                  })}
-                </tbody>
-              </table>
-            </div>
+                      )}
+                    </thead>
+                    <tbody>
+                      {filteredResults.slice().reverse().map((draw) => {
+                        if (game === '645') {
+                          const jackpot = draw.prizes.find(p => p.name.toLowerCase().includes('jackpot')) || { valueStr: '0', count: 0 };
+                          return (
+                            <tr key={draw.drawId}>
+                              <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>#{draw.drawIdStr}</td>
+                              <td>{draw.dateStr}</td>
+                              <td>
+                                <div className="balls-container">
+                                  {draw.numbers.map((n, i) => (
+                                    <span key={i} className="ball">{n}</span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: '600' }}>{jackpot.valueStr} đ</td>
+                              <td style={{ textAlign: 'right' }}>{jackpot.count}</td>
+                            </tr>
+                          );
+                        } else {
+                          const jp1 = draw.prizes.find(p => p.name.includes('Jackpot 1')) || { valueStr: '0', count: 0 };
+                          const jp2 = draw.prizes.find(p => p.name.includes('Jackpot 2')) || { valueStr: '0', count: 0 };
+                          return (
+                            <tr key={draw.drawId}>
+                              <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>#{draw.drawIdStr}</td>
+                              <td>{draw.dateStr}</td>
+                              <td>
+                                <div className="balls-container">
+                                  {draw.numbers.slice(0, 6).map((n, i) => (
+                                    <span key={i} className="ball">{n}</span>
+                                  ))}
+                                  <span style={{ color: 'var(--border-color)', alignSelf: 'center', fontSize: '1.2rem' }}>|</span>
+                                  <span className="ball power-bonus">{draw.numbers[6]}</span>
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: '600' }}>{jp1.valueStr} đ ({jp1.count})</td>
+                              <td style={{ textAlign: 'right', fontWeight: '600', color: 'var(--warning)' }}>{jp2.valueStr} đ ({jp2.count})</td>
+                            </tr>
+                          );
+                        }
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div className="stats-wrapper">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '0 8px' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    Tính toán vắng mặt dựa trên **{results.length}** kỳ quay đã cào.
+                  </span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Sắp xếp:</span>
+                    <select
+                      className="select-field"
+                      style={{ padding: '4px 8px', fontSize: '0.85rem', width: 'auto', display: 'inline-block' }}
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value)}
+                    >
+                      <option value="number">Số thứ tự (Tăng dần)</option>
+                      <option value="absent-desc">Kỳ vắng mặt (Nhiều nhất)</option>
+                      <option value="absent-asc">Kỳ vắng mặt (Ít nhất)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="table-wrapper">
+                  <table className="preview-table">
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'center', width: '80px' }}>Số</th>
+                        <th style={{ textAlign: 'center', width: '180px' }}>Số kỳ vắng mặt</th>
+                        <th>Kỳ về gần nhất</th>
+                        <th>Ngày về gần nhất</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {getSortedStats().map((item) => {
+                        let alertColor = 'var(--text-color)';
+                        let badgeBg = 'rgba(255,255,255,0.05)';
+                        if (item.absentDraws >= 20) {
+                          alertColor = '#e63946';
+                          badgeBg = 'rgba(230, 57, 70, 0.15)';
+                        } else if (item.absentDraws >= 10) {
+                          alertColor = '#f4a261';
+                          badgeBg = 'rgba(244, 162, 97, 0.15)';
+                        } else if (item.absentDraws === 0) {
+                          alertColor = '#2a9d8f';
+                          badgeBg = 'rgba(42, 157, 143, 0.15)';
+                        }
+
+                        return (
+                          <tr key={item.number}>
+                            <td style={{ textAlign: 'center' }}>
+                              <span className="ball" style={{ margin: '0 auto' }}>{item.number}</span>
+                            </td>
+                            <td style={{ textAlign: 'center', fontWeight: 'bold', color: alertColor }}>
+                              <span style={{ 
+                                padding: '4px 10px', 
+                                borderRadius: '12px', 
+                                backgroundColor: badgeBg
+                              }}>
+                                {item.absentDraws} kỳ
+                              </span>
+                            </td>
+                            <td style={{ fontWeight: '500' }}>
+                              {item.lastSeenDrawId !== 'N/A' ? `#${item.lastSeenDrawId}` : 'N/A'}
+                            </td>
+                            <td style={{ color: 'var(--text-muted)' }}>
+                              {item.lastSeenDate}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
           ) : (
             <div className="empty-state">
               <svg className="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
