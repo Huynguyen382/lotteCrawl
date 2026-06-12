@@ -170,37 +170,43 @@ function App() {
     const queryParts = searchQuery.toLowerCase().split(/[\s,.-]+/).filter(Boolean);
     if (queryParts.length === 0) return true;
 
-    // Chuyển đổi các từ khóa sang dạng số để kiểm tra
-    const numbersToSearch = queryParts.map(part => parseInt(part, 10));
-    
-    // Kiểm tra xem đây có phải là tìm kiếm BỘ SỐ hay không
-    // Điều kiện: Có từ 2 từ khóa trở lên và tất cả đều là số hợp lệ trong khoảng [1, 55]
-    const isLottoNumbersSearch = queryParts.length > 1 && numbersToSearch.every(num => !isNaN(num) && num >= 1 && num <= 55);
+    const lottoNumbers = [];
+    const metaQueries = [];
 
-    if (isLottoNumbersSearch) {
-      // BẮT BUỘC so khớp chính xác: toàn bộ các số tìm kiếm phải nằm trong bộ số trúng thưởng
-      return numbersToSearch.every((searchNum) => {
+    // Phân nhóm từ khóa thành 2 loại: số Vietlott hợp lệ [1, 55] và các chuỗi metadata khác
+    queryParts.forEach((part) => {
+      const isPureNumber = /^\d+$/.test(part);
+      const num = parseInt(part, 10);
+      
+      if (isPureNumber && !isNaN(num) && num >= 1 && num <= 55) {
+        lottoNumbers.push(num);
+      } else {
+        metaQueries.push(part);
+      }
+    });
+
+    // 1. Nếu có nhập số Vietlott: BẮT BUỘC toàn bộ số đó phải nằm trong bộ số trúng thưởng
+    if (lottoNumbers.length > 0) {
+      const hasAllNumbers = lottoNumbers.every((searchNum) => {
         return draw.numbers.some((num) => parseInt(num, 10) === searchNum);
+      });
+      if (!hasAllNumbers) return false;
+    }
+
+    // 2. Nếu có từ khóa khác (kỳ quay, ngày quay, chữ...): Khớp với kỳ quay hoặc ngày quay
+    if (metaQueries.length > 0) {
+      return metaQueries.every((part) => {
+        // Khớp mã kỳ quay (ví dụ: '1000' hoặc '#01000')
+        if (draw.drawIdStr.includes(part) || String(draw.drawId).includes(part)) return true;
+
+        // Khớp ngày quay
+        if (draw.dateStr.includes(part)) return true;
+
+        return false;
       });
     }
 
-    // Nếu chỉ có 1 từ khóa hoặc chứa ký tự không phải số Vietlott -> Tìm kiếm tự do (khớp số trúng, kỳ quay, ngày quay)
-    return queryParts.every((part) => {
-      // 1. Khớp số trúng thưởng (so sánh trị số chính xác)
-      const partNum = parseInt(part, 10);
-      const hasNumber = !isNaN(partNum) && draw.numbers.some((num) => {
-        return parseInt(num, 10) === partNum;
-      });
-      if (hasNumber) return true;
-
-      // 2. Khớp mã kỳ quay
-      if (draw.drawIdStr.includes(part) || String(draw.drawId).includes(part)) return true;
-
-      // 3. Khớp ngày quay
-      if (draw.dateStr.includes(part)) return true;
-
-      return false;
-    });
+    return true;
   });
 
   return (
