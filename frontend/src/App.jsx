@@ -26,6 +26,8 @@ function App() {
   const [scrapedRange, setScrapedRange] = useState(null);
   const [latestInfo, setLatestInfo] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statsSearchQuery, setStatsSearchQuery] = useState('');
+  const [statsViewMode, setStatsViewMode] = useState('table'); // 'table' or 'chart'
   const [activeTab, setActiveTab] = useState('preview');
   const [sortBy, setSortBy] = useState('number');
 
@@ -164,8 +166,14 @@ function App() {
     window.location.href = url;
   };
 
+  // Lấy các kết quả hiển thị thực tế (nằm trong khoảng kỳ đã cào được chọn)
+  const visibleResults = results.filter((draw) => {
+    if (!scrapedRange) return true;
+    return draw.drawId >= scrapedRange.startId && draw.drawId <= scrapedRange.endId;
+  });
+
   // Lọc kết quả theo điều kiện tìm kiếm (số, bộ số, kỳ quay, ngày quay)
-  const filteredResults = results.filter((draw) => {
+  const filteredResults = visibleResults.filter((draw) => {
     if (!searchQuery.trim()) return true;
 
     // Tách các từ khóa tìm kiếm bằng dấu cách, dấu phẩy hoặc dấu gạch ngang
@@ -213,11 +221,11 @@ function App() {
 
   // Tính toán số kỳ vắng mặt của các số từ 1-45 (Mega) hoặc 1-55 (Power)
   const getAbsenceStatistics = () => {
-    if (results.length === 0) return [];
+    if (visibleResults.length === 0) return [];
     
     const maxNum = game === '645' ? 45 : 55;
     // Sắp xếp kỳ quay giảm dần để duyệt từ mới nhất về cũ nhất
-    const reversedResults = [...results].sort((a, b) => b.drawId - a.drawId);
+    const reversedResults = [...visibleResults].sort((a, b) => b.drawId - a.drawId);
     
     const stats = [];
     
@@ -238,7 +246,7 @@ function App() {
       } else {
         stats.push({
           number: numStr,
-          absentDraws: results.length, // Chưa xuất hiện trong dải dữ liệu đã cào
+          absentDraws: visibleResults.length, // Chưa xuất hiện trong dải dữ liệu đã cào
           lastSeenDrawId: 'N/A',
           lastSeenDate: 'Chưa về'
         });
@@ -259,6 +267,73 @@ function App() {
       return stats.sort((a, b) => a.absentDraws - b.absentDraws);
     }
     return stats;
+  };
+
+  // Lọc kết quả thống kê vắng mặt theo statsSearchQuery
+  const getFilteredSortedStats = () => {
+    const stats = getSortedStats();
+    if (!statsSearchQuery.trim()) return stats;
+
+    const queryParts = statsSearchQuery.split(/[\s,.-]+/).filter(Boolean);
+    return stats.filter(item => {
+      return queryParts.some(part => {
+        const partInt = parseInt(part, 10);
+        if (!isNaN(partInt)) {
+          return parseInt(item.number, 10) === partInt;
+        }
+        return false;
+      });
+    });
+  };
+
+  // Tìm kỳ quay liền trước đó để tính toán chênh lệch
+  const getPreviousDraw = (currentDraw) => {
+    const sortedAll = [...results].sort((a, b) => a.drawId - b.drawId);
+    const currentIndex = sortedAll.findIndex(d => d.drawId === currentDraw.drawId);
+    if (currentIndex > 0) {
+      return sortedAll[currentIndex - 1];
+    }
+    return null;
+  };
+
+  // Tính toán tổng số và chênh lệch số giữa 2 kỳ quay liên tiếp
+  const calculateDeltas = (draw) => {
+    const prevDraw = getPreviousDraw(draw);
+    const currentNums = draw.numbers.map(n => parseInt(n, 10));
+    const currentSum = currentNums.reduce((sum, n) => sum + n, 0);
+    
+    let sumDiff = null;
+    let numDeltas = [];
+
+    if (prevDraw) {
+      const prevNums = prevDraw.numbers.map(n => parseInt(n, 10));
+      const prevSum = prevNums.reduce((sum, n) => sum + n, 0);
+      sumDiff = currentSum - prevSum;
+      
+      let curSorted = [];
+      let prevSorted = [];
+      
+      if (game === '645') {
+        curSorted = [...currentNums].sort((a, b) => a - b);
+        prevSorted = [...prevNums].sort((a, b) => a - b);
+      } else {
+        // Tách 6 số chính và 1 số đặc biệt đối với Power 6/55
+        const curMain = currentNums.slice(0, 6).sort((a, b) => a - b);
+        const prevMain = prevNums.slice(0, 6).sort((a, b) => a - b);
+        curSorted = [...curMain, currentNums[6]];
+        prevSorted = [...prevMain, prevNums[6]];
+      }
+
+      numDeltas = curSorted.map((num, idx) => {
+        return num - prevSorted[idx];
+      });
+    }
+
+    return {
+      currentSum,
+      sumDiff,
+      numDeltas
+    };
   };
 
   return (
@@ -407,15 +482,15 @@ function App() {
               </svg>
               Bảng xem trước dữ liệu
             </h2>
-            {results.length > 0 && (
+            {visibleResults.length > 0 && (
               <span className="preview-count">
-                Đã tải {results.length} kỳ quay
+                Đã tải {visibleResults.length} kỳ quay
               </span>
             )}
           </div>
 
           {/* Tab Navigation */}
-          {results.length > 0 && (
+          {visibleResults.length > 0 && (
             <div className="tabs-navigation" style={{ 
               display: 'flex', 
               gap: '12px', 
@@ -425,7 +500,10 @@ function App() {
             }}>
               <button
                 className={`tab-btn ${activeTab === 'preview' ? 'active' : ''}`}
-                onClick={() => setActiveTab('preview')}
+                onClick={() => {
+                  setActiveTab('preview');
+                  setStatsSearchQuery(''); // Xóa query search thống kê khi qua tab xem trước
+                }}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -443,7 +521,7 @@ function App() {
                 className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
                 onClick={() => {
                   setActiveTab('stats');
-                  setSearchQuery(''); // Xóa query search khi qua tab thống kê
+                  setSearchQuery(''); // Xóa query search thường khi qua tab thống kê
                 }}
                 style={{
                   background: 'none',
@@ -475,12 +553,12 @@ function App() {
           )}
 
           {/* Tab Content */}
-          {results.length > 0 ? (
+          {visibleResults.length > 0 ? (
             activeTab === 'preview' ? (
               <>
                 {/* Search Box */}
                 <div className="search-container" style={{ marginBottom: '16px', padding: '0 8px' }}>
-                  <div className="input-group" style={{ position: 'relative' }}>
+                  <div className="input-group" style={{ position: 'relative', width: '100%' }}>
                     <input
                       type="text"
                       placeholder="Tìm kiếm kỳ quay, ngày, số (ví dụ: 15) hoặc bộ số (ví dụ: 15 23 34)..."
@@ -531,12 +609,12 @@ function App() {
                   </div>
                   {searchQuery && (
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-                      Tìm thấy <strong>{filteredResults.length}</strong> / {results.length} kỳ quay khớp điều kiện.
+                      Tìm thấy <strong>{filteredResults.length}</strong> / {visibleResults.length} kỳ quay khớp điều kiện.
                     </div>
                   )}
                 </div>
 
-                {/* Results Table */}
+                 {/* Results Table */}
                 <div className="table-wrapper">
                   <table className="preview-table">
                     <thead>
@@ -544,7 +622,8 @@ function App() {
                         <tr>
                           <th>Kỳ Quay</th>
                           <th>Ngày Quay</th>
-                          <th>Bộ Số Trúng Thưởng</th>
+                          <th>Bộ Số Trúng Thưởng (Chênh lệch)</th>
+                          <th style={{ textAlign: 'center', width: '110px' }}>Tổng (Lệch)</th>
                           <th style={{ textAlign: 'right' }}>Giá trị Jackpot</th>
                           <th style={{ textAlign: 'right' }}>Số người trúng</th>
                         </tr>
@@ -553,6 +632,7 @@ function App() {
                           <th>Kỳ Quay</th>
                           <th>Ngày Quay</th>
                           <th>Bộ Số Trúng Thưởng (1-6 | Bonus)</th>
+                          <th style={{ textAlign: 'center', width: '110px' }}>Tổng (Lệch)</th>
                           <th style={{ textAlign: 'right' }}>Jackpot 1</th>
                           <th style={{ textAlign: 'right' }}>Jackpot 2</th>
                         </tr>
@@ -560,6 +640,7 @@ function App() {
                     </thead>
                     <tbody>
                       {filteredResults.slice().reverse().map((draw) => {
+                        const { currentSum, sumDiff, numDeltas } = calculateDeltas(draw);
                         if (game === '645') {
                           const jackpot = draw.prizes.find(p => p.name.toLowerCase().includes('jackpot')) || { valueStr: '0', count: 0 };
                           return (
@@ -572,6 +653,30 @@ function App() {
                                     <span key={i} className="ball">{n}</span>
                                   ))}
                                 </div>
+                                {numDeltas.length > 0 && (
+                                  <div className="deltas-container" style={{ display: 'flex', gap: '8px', marginTop: '4px', paddingLeft: '2px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                                    {numDeltas.map((diff, i) => {
+                                      const color = diff > 0 ? '#2a9d8f' : diff < 0 ? '#e63946' : 'var(--text-muted, #8d99ae)';
+                                      const sign = diff > 0 ? `+${diff}` : diff;
+                                      return (
+                                        <span key={i} style={{ width: '28px', textAlign: 'center', color: color }}>
+                                          {sign}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{ textAlign: 'center', fontWeight: 'bold' }}>
+                                <div style={{ color: 'var(--text-main)' }}>{currentSum}</div>
+                                {sumDiff !== null && (
+                                  <div style={{ 
+                                    fontSize: '0.75rem', 
+                                    color: sumDiff > 0 ? '#2ec4b6' : sumDiff < 0 ? '#e63946' : 'var(--text-muted)' 
+                                  }}>
+                                    {sumDiff > 0 ? `+${sumDiff}` : sumDiff}
+                                  </div>
+                                )}
                               </td>
                               <td style={{ textAlign: 'right', fontWeight: '600' }}>{jackpot.valueStr} đ</td>
                               <td style={{ textAlign: 'right' }}>{jackpot.count}</td>
@@ -592,6 +697,38 @@ function App() {
                                   <span style={{ color: 'var(--border-color)', alignSelf: 'center', fontSize: '1.2rem' }}>|</span>
                                   <span className="ball power-bonus">{draw.numbers[6]}</span>
                                 </div>
+                                {numDeltas.length > 0 && (
+                                  <div className="deltas-container" style={{ display: 'flex', gap: '8px', marginTop: '4px', paddingLeft: '2px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                                    {numDeltas.slice(0, 6).map((diff, i) => {
+                                      const color = diff > 0 ? '#2a9d8f' : diff < 0 ? '#e63946' : 'var(--text-muted, #8d99ae)';
+                                      const sign = diff > 0 ? `+${diff}` : diff;
+                                      return (
+                                        <span key={i} style={{ width: '28px', textAlign: 'center', color: color }}>
+                                          {sign}
+                                        </span>
+                                      );
+                                    })}
+                                    <span style={{ width: '8px' }}></span>
+                                    <span style={{ 
+                                      width: '28px', 
+                                      textAlign: 'center', 
+                                      color: numDeltas[6] > 0 ? '#2a9d8f' : numDeltas[6] < 0 ? '#e63946' : 'var(--text-muted, #8d99ae)' 
+                                    }}>
+                                      {numDeltas[6] > 0 ? `+${numDeltas[6]}` : numDeltas[6]}
+                                    </span>
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{ textAlign: 'center', fontWeight: 'bold' }}>
+                                <div style={{ color: 'var(--text-main)' }}>{currentSum}</div>
+                                {sumDiff !== null && (
+                                  <div style={{ 
+                                    fontSize: '0.75rem', 
+                                    color: sumDiff > 0 ? '#2ec4b6' : sumDiff < 0 ? '#e63946' : 'var(--text-muted)' 
+                                  }}>
+                                    {sumDiff > 0 ? `+${sumDiff}` : sumDiff}
+                                  </div>
+                                )}
                               </td>
                               <td style={{ textAlign: 'right', fontWeight: '600' }}>{jp1.valueStr} đ ({jp1.count})</td>
                               <td style={{ textAlign: 'right', fontWeight: '600', color: 'var(--warning)' }}>{jp2.valueStr} đ ({jp2.count})</td>
@@ -605,76 +742,232 @@ function App() {
               </>
             ) : (
               <div className="stats-wrapper">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '0 8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '0 8px', gap: '16px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    Tính toán vắng mặt dựa trên **{results.length}** kỳ quay đã cào.
+                    Tính toán vắng mặt dựa trên **{visibleResults.length}** kỳ quay đã cào.
                   </span>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Sắp xếp:</span>
-                    <select
-                      className="select-field"
-                      style={{ padding: '4px 8px', fontSize: '0.85rem', width: 'auto', display: 'inline-block' }}
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value)}
-                    >
-                      <option value="number">Số thứ tự (Tăng dần)</option>
-                      <option value="absent-desc">Kỳ vắng mặt (Nhiều nhất)</option>
-                      <option value="absent-asc">Kỳ vắng mặt (Ít nhất)</option>
-                    </select>
+                  
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Stats Search Box */}
+                    <div className="input-group" style={{ position: 'relative', width: '220px' }}>
+                      <input
+                        type="text"
+                        placeholder="Tìm số (ví dụ: 05, 12)..."
+                        className="input-field"
+                        value={statsSearchQuery}
+                        onChange={(e) => setStatsSearchQuery(e.target.value)}
+                        style={{ paddingLeft: '32px', paddingRight: '28px', height: '32px', fontSize: '0.8rem' }}
+                      />
+                      <svg 
+                        width="14" 
+                        height="14" 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round"
+                        style={{
+                          position: 'absolute',
+                          left: '10px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          color: 'var(--text-muted)'
+                        }}
+                      >
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                      </svg>
+                      {statsSearchQuery && (
+                        <button 
+                          onClick={() => setStatsSearchQuery('')}
+                          style={{
+                            position: 'absolute',
+                            right: '8px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            fontSize: '1rem',
+                            lineHeight: '1'
+                          }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+
+                    {/* View Mode Toggle */}
+                    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px', border: '1px solid var(--border-color)' }}>
+                      <button
+                        className={`toggle-btn ${statsViewMode === 'table' ? 'active' : ''}`}
+                        onClick={() => setStatsViewMode('table')}
+                        style={{
+                          background: statsViewMode === 'table' ? 'var(--primary)' : 'none',
+                          border: 'none',
+                          color: '#fff',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.8rem',
+                          fontWeight: '600',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        Bảng
+                      </button>
+                      <button
+                        className={`toggle-btn ${statsViewMode === 'chart' ? 'active' : ''}`}
+                        onClick={() => setStatsViewMode('chart')}
+                        style={{
+                          background: statsViewMode === 'chart' ? 'var(--primary)' : 'none',
+                          border: 'none',
+                          color: '#fff',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.8rem',
+                          fontWeight: '600',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        Biểu đồ
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Sắp xếp:</span>
+                      <select
+                        className="select-field"
+                        style={{ padding: '4px 8px', fontSize: '0.85rem', width: 'auto', display: 'inline-block', height: '32px' }}
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                      >
+                        <option value="number">Số thứ tự (Tăng dần)</option>
+                        <option value="absent-desc">Kỳ vắng mặt (Nhiều nhất)</option>
+                        <option value="absent-asc">Kỳ vắng mặt (Ít nhất)</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
-                <div className="table-wrapper">
-                  <table className="preview-table">
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: 'center', width: '80px' }}>Số</th>
-                        <th style={{ textAlign: 'center', width: '180px' }}>Số kỳ vắng mặt</th>
-                        <th>Kỳ về gần nhất</th>
-                        <th>Ngày về gần nhất</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {getSortedStats().map((item) => {
-                        let alertColor = 'var(--text-color)';
-                        let badgeBg = 'rgba(255,255,255,0.05)';
-                        if (item.absentDraws >= 20) {
-                          alertColor = '#e63946';
-                          badgeBg = 'rgba(230, 57, 70, 0.15)';
-                        } else if (item.absentDraws >= 10) {
-                          alertColor = '#f4a261';
-                          badgeBg = 'rgba(244, 162, 97, 0.15)';
-                        } else if (item.absentDraws === 0) {
-                          alertColor = '#2a9d8f';
-                          badgeBg = 'rgba(42, 157, 143, 0.15)';
-                        }
+                {statsViewMode === 'table' ? (
+                  <div className="table-wrapper">
+                    <table className="preview-table">
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'center', width: '80px' }}>Số</th>
+                          <th style={{ textAlign: 'center', width: '180px' }}>Số kỳ vắng mặt</th>
+                          <th>Kỳ về gần nhất</th>
+                          <th>Ngày về gần nhất</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {getFilteredSortedStats().map((item) => {
+                          let alertColor = 'var(--text-color)';
+                          let badgeBg = 'rgba(255,255,255,0.05)';
+                          if (item.absentDraws >= 20) {
+                            alertColor = '#e63946';
+                            badgeBg = 'rgba(230, 57, 70, 0.15)';
+                          } else if (item.absentDraws >= 10) {
+                            alertColor = '#f4a261';
+                            badgeBg = 'rgba(244, 162, 97, 0.15)';
+                          } else if (item.absentDraws === 0) {
+                            alertColor = '#2a9d8f';
+                            badgeBg = 'rgba(42, 157, 143, 0.15)';
+                          }
 
-                        return (
-                          <tr key={item.number}>
-                            <td style={{ textAlign: 'center' }}>
-                              <span className="ball" style={{ margin: '0 auto' }}>{item.number}</span>
-                            </td>
-                            <td style={{ textAlign: 'center', fontWeight: 'bold', color: alertColor }}>
-                              <span style={{ 
-                                padding: '4px 10px', 
-                                borderRadius: '12px', 
-                                backgroundColor: badgeBg
-                              }}>
-                                {item.absentDraws} kỳ
-                              </span>
-                            </td>
-                            <td style={{ fontWeight: '500' }}>
-                              {item.lastSeenDrawId !== 'N/A' ? `#${item.lastSeenDrawId}` : 'N/A'}
-                            </td>
-                            <td style={{ color: 'var(--text-muted)' }}>
-                              {item.lastSeenDate}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                          return (
+                            <tr key={item.number}>
+                              <td style={{ textAlign: 'center' }}>
+                                <span className="ball" style={{ margin: '0 auto' }}>{item.number}</span>
+                              </td>
+                              <td style={{ textAlign: 'center', fontWeight: 'bold', color: alertColor }}>
+                                <span style={{ 
+                                  padding: '4px 10px', 
+                                  borderRadius: '12px', 
+                                  backgroundColor: badgeBg
+                                }}>
+                                  {item.absentDraws} kỳ
+                                </span>
+                              </td>
+                              <td style={{ fontWeight: '500' }}>
+                                {item.lastSeenDrawId !== 'N/A' ? `#${item.lastSeenDrawId}` : 'N/A'}
+                              </td>
+                              <td style={{ color: 'var(--text-muted)' }}>
+                                {item.lastSeenDate}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="chart-view" style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '16px', 
+                    padding: '20px', 
+                    background: 'rgba(10, 15, 29, 0.3)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '12px'
+                  }}>
+                    {getFilteredSortedStats().map((item) => {
+                      const maxAbsent = Math.max(...getFilteredSortedStats().map(s => s.absentDraws), 1);
+                      const percent = Math.min(100, (item.absentDraws / maxAbsent) * 100);
+                      
+                      let barColor = 'var(--text-dimmed, #6c7a89)';
+                      let glowColor = 'rgba(108, 122, 137, 0.2)';
+                      
+                      if (item.absentDraws >= 20) {
+                        barColor = '#e63946'; // Vietlott Red
+                        glowColor = 'rgba(230, 57, 70, 0.3)';
+                      } else if (item.absentDraws >= 10) {
+                        barColor = '#f4a261'; // Warning Orange
+                        glowColor = 'rgba(244, 162, 97, 0.3)';
+                      } else if (item.absentDraws === 0) {
+                        barColor = '#2a9d8f'; // Success Green
+                        glowColor = 'rgba(42, 157, 143, 0.3)';
+                      }
+
+                      return (
+                        <div key={item.number} style={{ display: 'flex', alignItems: 'center', gap: '16px' }} title={`Số ${item.number} vắng mặt ${item.absentDraws} kỳ. Lần cuối về ở Kỳ #${item.lastSeenDrawId} ngày ${item.lastSeenDate}.`}>
+                          <span className="ball" style={{ width: '32px', height: '32px', fontSize: '0.85rem', flexShrink: 0, background: item.absentDraws === 0 ? 'radial-gradient(circle at 30% 30%, #2a9d8f, #1a6d61)' : undefined }}>
+                            {item.number}
+                          </span>
+                          
+                          <div style={{ flex: '1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              <span>Lần về gần nhất: <strong>{item.lastSeenDrawId !== 'N/A' ? `#${item.lastSeenDrawId}` : 'N/A'}</strong> ({item.lastSeenDate})</span>
+                              <span style={{ fontWeight: 'bold', color: barColor }}>{item.absentDraws} kỳ vắng</span>
+                            </div>
+                            <div style={{ 
+                              width: '100%', 
+                              height: '12px', 
+                              background: 'rgba(0,0,0,0.3)', 
+                              borderRadius: '6px', 
+                              overflow: 'hidden', 
+                              border: '1px solid rgba(255, 255, 255, 0.05)',
+                              position: 'relative'
+                            }}>
+                              <div style={{ 
+                                width: `${percent}%`, 
+                                height: '100%', 
+                                background: `linear-gradient(90deg, ${barColor}aa, ${barColor})`, 
+                                borderRadius: '6px', 
+                                transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+                                boxShadow: `0 0 8px ${glowColor}`
+                              }}></div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )
           ) : (

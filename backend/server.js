@@ -158,11 +158,14 @@ app.get('/api/scrape-stream', async (req, res) => {
         sendEvent('start', { startId, endId, totalDraws });
 
         const results = [];
-        // 3. Fetch details for each draw với concurrency
+        // 3. Fetch details for each draw với concurrency (bao gồm cả kỳ startId - 1 nếu có để tính delta)
         const CONCURRENCY = 5; // Số request đồng thời (tăng nếu cần)
         const queue = [];
         
-        for (let id = startId; id <= endId; id++) {
+        const hasPrev = startId > 1;
+        const fetchStartId = hasPrev ? startId - 1 : startId;
+        
+        for (let id = fetchStartId; id <= endId; id++) {
             queue.push(id);
         }
         
@@ -182,15 +185,17 @@ app.get('/api/scrape-stream', async (req, res) => {
                 sendEvent('log', { message: `Cảnh báo: Không thể tải kỳ quay #${id}: ${err.message}` });
                 return { success: false, id };
             } finally {
-                completed++;
-                const progressPercent = Math.round((completed / totalDraws) * 100);
-                sendEvent('progress', { 
-                    currentId: id, 
-                    progress: completed, 
-                    total: totalDraws, 
-                    percent: progressPercent,
-                    message: `Đang tải chi tiết kỳ quay #${id}... (${completed}/${totalDraws})`
-                });
+                if (id >= startId) {
+                    completed++;
+                    const progressPercent = Math.min(100, Math.round((completed / totalDraws) * 100));
+                    sendEvent('progress', { 
+                        currentId: id, 
+                        progress: completed, 
+                        total: totalDraws, 
+                        percent: progressPercent,
+                        message: `Đang tải chi tiết kỳ quay #${id}... (${completed}/${totalDraws})`
+                    });
+                }
             }
         };
         
@@ -219,6 +224,21 @@ app.get('/api/scrape-stream', async (req, res) => {
         res.end();
     }
 });
+
+// Hỗ trợ lấy thông tin kỳ quay trước đó để tính toán delta cho file Excel
+async function getPreviousDrawDetail(game, currentId) {
+    if (currentId <= 1) return null;
+    const prevId = currentId - 1;
+    if (cache[game] && cache[game][prevId]) {
+        return cache[game][prevId];
+    }
+    try {
+        return await fetchDrawDetail(game, prevId, true);
+    } catch (e) {
+        console.error(`Could not fetch previous draw #${prevId} for delta calculation:`, e.message);
+        return null;
+    }
+}
 
 // 3. Export to Excel
 app.get('/api/export', async (req, res) => {
@@ -255,6 +275,9 @@ app.get('/api/export', async (req, res) => {
             return res.status(404).json({ error: 'No draw data found to export' });
         }
 
+        // Lấy kỳ quay liền trước sId để tính delta cho kỳ đầu tiên
+        const firstDrawPrev = await getPreviousDrawDetail(game, sId);
+
         const workbook = new ExcelJS.Workbook();
         const sheetName = game === '645' ? 'Mega 6-45' : 'Power 6-55';
         const worksheet = workbook.addWorksheet(sheetName);
@@ -279,7 +302,30 @@ app.get('/api/export', async (req, res) => {
             ? `KẾT QUẢ CÀO DỮ LIỆU VIETLOTT MEGA 6/45 (KỲ #${startId} - #${endId})`
             : `KẾT QUẢ CÀO DỮ LIỆU VIETLOTT POWER 6/55 (KỲ #${startId} - #${endId})`;
         
-        worksheet.mergeCells('A1:L1');
+        // Headers
+        let headers = [];
+        if (game === '645') {
+            headers = [
+                'Kỳ Quay', 'Ngày Quay', 
+                'Số 1', 'Số 2', 'Số 3', 'Số 4', 'Số 5', 'Số 6',
+                'Lệch S1', 'Lệch S2', 'Lệch S3', 'Lệch S4', 'Lệch S5', 'Lệch S6',
+                'Tổng', 'Lệch Tổng',
+                'Giá Trị Jackpot (đ)', 'Trúng Jackpot', 
+                'Trúng Giải Nhất (10M)', 'Trúng Giải Nhì (300k)', 'Trúng Giải Ba (30k)'
+            ];
+        } else {
+            headers = [
+                'Kỳ Quay', 'Ngày Quay', 
+                'Số 1', 'Số 2', 'Số 3', 'Số 4', 'Số 5', 'Số 6', 'Số Đặc Biệt',
+                'Lệch S1', 'Lệch S2', 'Lệch S3', 'Lệch S4', 'Lệch S5', 'Lệch S6', 'Lệch SĐB',
+                'Tổng', 'Lệch Tổng',
+                'Giá Trị Jackpot 1 (đ)', 'Trúng Jackpot 1', 
+                'Giá Trị Jackpot 2 (đ)', 'Trúng Jackpot 2', 
+                'Trúng Giải Nhất (40M)', 'Trúng Giải Nhì (500k)', 'Trúng Giải Ba (50k)'
+            ];
+        }
+
+        worksheet.mergeCells(1, 1, 1, headers.length);
         const titleRow = worksheet.getRow(1);
         titleRow.height = 35;
         const titleCell = titleRow.getCell(1);
@@ -291,25 +337,6 @@ app.get('/api/export', async (req, res) => {
             fgColor: { argb: titleColor }
         };
         titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-
-        // Headers
-        let headers = [];
-        if (game === '645') {
-            headers = [
-                'Kỳ Quay', 'Ngày Quay', 
-                'Số 1', 'Số 2', 'Số 3', 'Số 4', 'Số 5', 'Số 6',
-                'Giá Trị Jackpot (đ)', 'Trúng Jackpot', 
-                'Trúng Giải Nhất (10M)', 'Trúng Giải Nhì (300k)', 'Trúng Giải Ba (30k)'
-            ];
-        } else {
-            headers = [
-                'Kỳ Quay', 'Ngày Quay', 
-                'Số 1', 'Số 2', 'Số 3', 'Số 4', 'Số 5', 'Số 6', 'Số Đặc Biệt',
-                'Giá Trị Jackpot 1 (đ)', 'Trúng Jackpot 1', 
-                'Giá Trị Jackpot 2 (đ)', 'Trúng Jackpot 2', 
-                'Trúng Giải Nhất (40M)', 'Trúng Giải Nhì (500k)', 'Trúng Giải Ba (50k)'
-            ];
-        }
 
         const headerRow = worksheet.getRow(3);
         headerRow.height = 28;
@@ -328,7 +355,7 @@ app.get('/api/export', async (req, res) => {
 
         // Add Data Rows
         let rowIdx = 4;
-        draws.forEach((draw) => {
+        draws.forEach((draw, i) => {
             const dataRow = worksheet.getRow(rowIdx);
             dataRow.height = 22;
 
@@ -339,6 +366,40 @@ app.get('/api/export', async (req, res) => {
                 pattern: 'solid',
                 fgColor: { argb: zebraBgColor }
             } : null;
+
+            const prevDraw = i > 0 ? draws[i - 1] : firstDrawPrev;
+            const currentNums = draw.numbers.map(n => parseInt(n, 10));
+            const currentSum = currentNums.reduce((sum, n) => sum + n, 0);
+
+            let sumDiff = null;
+            let numDeltas = [];
+
+            if (prevDraw) {
+                const prevNums = prevDraw.numbers.map(n => parseInt(n, 10));
+                const prevSum = prevNums.reduce((sum, n) => sum + n, 0);
+                sumDiff = currentSum - prevSum;
+
+                let curSorted = [];
+                let prevSorted = [];
+
+                if (game === '645') {
+                    curSorted = [...currentNums].sort((a, b) => a - b);
+                    prevSorted = [...prevNums].sort((a, b) => a - b);
+                } else {
+                    const curMain = currentNums.slice(0, 6).sort((a, b) => a - b);
+                    const prevMain = prevNums.slice(0, 6).sort((a, b) => a - b);
+                    curSorted = [...curMain, currentNums[6]];
+                    prevSorted = [...prevMain, prevNums[6]];
+                }
+
+                numDeltas = curSorted.map((num, idx) => num - prevSorted[idx]);
+            } else {
+                if (game === '645') {
+                    numDeltas = [null, null, null, null, null, null];
+                } else {
+                    numDeltas = [null, null, null, null, null, null, null];
+                }
+            }
 
             if (game === '645') {
                 const jack = draw.prizes.find(p => p.name.toLowerCase().includes('jackpot')) || { value: 0, count: 0 };
@@ -355,6 +416,14 @@ app.get('/api/export', async (req, res) => {
                     parseInt(draw.numbers[3], 10),
                     parseInt(draw.numbers[4], 10),
                     parseInt(draw.numbers[5], 10),
+                    numDeltas[0],
+                    numDeltas[1],
+                    numDeltas[2],
+                    numDeltas[3],
+                    numDeltas[4],
+                    numDeltas[5],
+                    currentSum,
+                    sumDiff,
                     jack.value,
                     jack.count,
                     g1.count,
@@ -378,6 +447,15 @@ app.get('/api/export', async (req, res) => {
                     parseInt(draw.numbers[4], 10),
                     parseInt(draw.numbers[5], 10),
                     parseInt(draw.numbers[6], 10), // Bonus ball
+                    numDeltas[0],
+                    numDeltas[1],
+                    numDeltas[2],
+                    numDeltas[3],
+                    numDeltas[4],
+                    numDeltas[5],
+                    numDeltas[6], // Bonus ball delta
+                    currentSum,
+                    sumDiff,
                     jack1.value,
                     jack1.count,
                     jack2.value,
@@ -398,18 +476,47 @@ app.get('/api/export', async (req, res) => {
                 }
 
                 // Alignments & Number formats
-                if (colIdx === 0 || colIdx === 1) {
-                    // ID & Date
-                    cell.alignment = { vertical: 'middle', horizontal: 'center' };
-                } else if (colIdx >= 2 && colIdx <= (game === '645' ? 7 : 8)) {
-                    // Winning balls
-                    cell.alignment = { vertical: 'middle', horizontal: 'center' };
-                    cell.numFmt = '00'; // Keep padding
-                } else {
-                    // Prize counts & values
-                    cell.alignment = { vertical: 'middle', horizontal: 'right' };
-                    if (typeof val === 'number') {
+                if (game === '645') {
+                    if (colIdx === 0 || colIdx === 1) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                    } else if (colIdx >= 2 && colIdx <= 7) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        cell.numFmt = '00';
+                    } else if (colIdx >= 8 && colIdx <= 13) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        cell.numFmt = '+0;-0;0';
+                    } else if (colIdx === 14) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
                         cell.numFmt = '#,##0';
+                    } else if (colIdx === 15) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        cell.numFmt = '+0;-0;0';
+                    } else {
+                        cell.alignment = { vertical: 'middle', horizontal: 'right' };
+                        if (typeof val === 'number') {
+                            cell.numFmt = '#,##0';
+                        }
+                    }
+                } else {
+                    if (colIdx === 0 || colIdx === 1) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                    } else if (colIdx >= 2 && colIdx <= 8) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        cell.numFmt = '00';
+                    } else if (colIdx >= 9 && colIdx <= 15) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        cell.numFmt = '+0;-0;0';
+                    } else if (colIdx === 16) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        cell.numFmt = '#,##0';
+                    } else if (colIdx === 17) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        cell.numFmt = '+0;-0;0';
+                    } else {
+                        cell.alignment = { vertical: 'middle', horizontal: 'right' };
+                        if (typeof val === 'number') {
+                            cell.numFmt = '#,##0';
+                        }
                     }
                 }
             });
