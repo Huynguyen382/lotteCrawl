@@ -80,6 +80,16 @@ app.get('/api/latest', async (req, res) => {
         return res.status(400).json({ error: 'Game type must be 645 or 655' });
     }
     try {
+        // Lấy thông tin kỳ mới nhất trong DB trước để tránh gọi Vietlott bị 403
+        const latestDbDraw = await db.getLatestDraw(game);
+        if (latestDbDraw) {
+            return res.json({
+                drawId: latestDbDraw.drawId,
+                dateStr: latestDbDraw.dateStr,
+                dateYmd: latestDbDraw.dateYmd
+            });
+        }
+        // Fallback nếu DB trống
         const info = await fetchLatestDrawInfo(game);
         res.json(info);
     } catch (error) {
@@ -131,12 +141,20 @@ app.get('/api/scrape-stream', async (req, res) => {
     });
 
     try {
-        sendEvent('log', { message: 'Đang kết nối đến hệ thống Vietlott...' });
+        sendEvent('log', { message: 'Đang kết nối đến cơ sở dữ liệu...' });
         
-        // 1. Fetch latest draw info to set upper bound
-        const latestInfo = await fetchLatestDrawInfo(game);
-        const latestId = latestInfo.drawId;
-        sendEvent('log', { message: `Kỳ quay mới nhất hiện tại: #${latestId} (${latestInfo.dateStr})` });
+        // 1. Lấy thông tin kỳ quay mới nhất từ DB để tránh gọi Vietlott trực tiếp bị 403
+        let latestId = null;
+        let latestInfo = await db.getLatestDraw(game);
+        if (latestInfo) {
+            latestId = latestInfo.drawId;
+            sendEvent('log', { message: `Kỳ quay mới nhất hiện tại (từ DB): #${latestId} (${latestInfo.dateStr})` });
+        } else {
+            sendEvent('log', { message: 'Không tìm thấy dữ liệu trong DB. Đang cào thông tin mới nhất từ Vietlott...' });
+            latestInfo = await fetchLatestDrawInfo(game);
+            latestId = latestInfo.drawId;
+            sendEvent('log', { message: `Kỳ quay mới nhất hiện tại (cào mới): #${latestId} (${latestInfo.dateStr})` });
+        }
 
         // 2. Perform binary search for start and end dates
         sendEvent('log', { message: `Đang tìm kỳ quay bắt đầu cho ngày ${startDate}...` });
