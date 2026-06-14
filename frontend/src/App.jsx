@@ -539,7 +539,7 @@ function App() {
           )}
         </div>
         {latestInfo && (
-          <div className="glass-panel" style={{ padding: '10px 18px', fontSize: '0.85rem' }}>
+          <div className="glass-panel header-latest-panel">
             <span style={{ color: 'var(--text-muted)' }}>Mới nhất ({game === '645' ? 'Mega' : 'Power'}): </span>
             <strong style={{ color: 'var(--accent)' }}>Kỳ #{latestInfo.drawId}</strong> ({latestInfo.dateStr})
           </div>
@@ -1410,13 +1410,13 @@ function App() {
                       }
 
                       return (
-                        <div key={item.number} style={{ display: 'flex', alignItems: 'center', gap: '16px' }} title={`Số ${item.number} vắng mặt ${item.absentDraws} kỳ. Lần cuối về ở Kỳ #${item.lastSeenDrawId} ngày ${item.lastSeenDate}.`}>
+                        <div key={item.number} className="chart-row" title={`Số ${item.number} vắng mặt ${item.absentDraws} kỳ. Lần cuối về ở Kỳ #${item.lastSeenDrawId} ngày ${item.lastSeenDate}.`}>
                           <span className="ball" style={{ width: '32px', height: '32px', fontSize: '0.85rem', flexShrink: 0, background: item.absentDraws === 0 ? 'radial-gradient(circle at 30% 30%, #2a9d8f, #1a6d61)' : undefined }}>
                             {item.number}
                           </span>
                           
-                          <div style={{ flex: '1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          <div className="chart-row-details">
+                            <div className="chart-row-header">
                               <span>Lần về gần nhất: <strong>{item.lastSeenDrawId !== 'N/A' ? `#${item.lastSeenDrawId}` : 'N/A'}</strong> ({item.lastSeenDate})</span>
                               <span style={{ fontWeight: 'bold', color: barColor }}>{item.absentDraws} kỳ vắng</span>
                             </div>
