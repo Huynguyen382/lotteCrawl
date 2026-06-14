@@ -3,38 +3,7 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-
-const CACHE_FILE = path.join(__dirname, 'cache.json');
-let cache = { "645": {}, "655": {} };
-
-// Load cache from file
-function loadCache() {
-    try {
-        if (fs.existsSync(CACHE_FILE)) {
-            const data = fs.readFileSync(CACHE_FILE, 'utf8');
-            cache = JSON.parse(data);
-            console.log(`Loaded cache: Mega 6/45 (${Object.keys(cache["645"]).length} draws), Power 6/55 (${Object.keys(cache["655"]).length} draws)`);
-        } else {
-            saveCache();
-        }
-    } catch (error) {
-        console.error('Error loading cache:', error.message);
-    }
-}
-
-// Save cache to file (chỉ lưu khi không phải production trên cloud)
-function saveCache() {
-    try {
-        fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
-    } catch (error) {
-        // Bỏ qua lỗi khi filesystem read-only (Render, Heroku, ...)
-        if (process.env.NODE_ENV !== 'production') {
-            console.error('Error saving cache:', error.message);
-        }
-    }
-}
-
-loadCache();
+const db = require('./db');
 
 // Utility helper to add padding
 function padDrawId(drawId) {
@@ -214,8 +183,9 @@ async function fetchLatestDrawInfo(gameType) {
  * @param {boolean} useCache - Whether to check local cache
  */
 async function fetchDrawDetail(gameType, drawId, useCache = true) {
-    if (useCache && cache[gameType] && cache[gameType][drawId]) {
-        return cache[gameType][drawId];
+    if (useCache) {
+        const cached = await db.getDraw(gameType, drawId);
+        if (cached) return cached;
     }
 
     const paddedId = padDrawId(drawId);
@@ -309,8 +279,7 @@ async function fetchDrawDetail(gameType, drawId, useCache = true) {
         };
 
         // Save to cache
-        cache[gameType][drawIdParsed] = result;
-        saveCache();
+        await db.saveDraw(gameType, result);
 
         return result;
     } catch (error) {
@@ -323,8 +292,9 @@ async function fetchDrawDetail(gameType, drawId, useCache = true) {
  * Get date of a draw ID (using cache when possible)
  */
 async function getDrawDateYmd(gameType, drawId) {
-    if (cache[gameType] && cache[gameType][drawId]) {
-        return cache[gameType][drawId].dateYmd;
+    const cached = await db.getDraw(gameType, drawId);
+    if (cached) {
+        return cached.dateYmd;
     }
     try {
         const detail = await fetchDrawDetail(gameType, drawId, true);
@@ -344,19 +314,20 @@ async function getDrawDateYmd(gameType, drawId) {
  * @param {function} onProgress - Progress reporting callback
  */
 async function findDrawIdForDate(gameType, targetDateYmd, boundaryType, latestId, onProgress) {
-    // Lấy danh sách ID đã có trong cache
-    const cachedIds = Object.keys(cache[gameType] || {}).map(id => parseInt(id, 10)).sort((a, b) => a - b);
+    // Lấy danh sách ID đã có trong cache/db và lọc các kỳ <= latestId trên web thực tế
+    const allDraws = (await db.getAllDrawsMetadata(gameType)).filter(d => d.drawId <= latestId);
+    const cachedIds = allDraws.map(d => d.drawId);
     
     let minCachedId = 1;
     let maxCachedId = latestId;
     let minDateYmd = '';
     let maxDateYmd = '';
 
-    if (cachedIds.length > 0) {
-        minCachedId = cachedIds[0];
-        maxCachedId = cachedIds[cachedIds.length - 1];
-        if (cache[gameType][minCachedId]) minDateYmd = cache[gameType][minCachedId].dateYmd;
-        if (cache[gameType][maxCachedId]) maxDateYmd = cache[gameType][maxCachedId].dateYmd;
+    if (allDraws.length > 0) {
+        minCachedId = allDraws[0].drawId;
+        maxCachedId = allDraws[allDraws.length - 1].drawId;
+        minDateYmd = allDraws[0].dateYmd;
+        maxDateYmd = allDraws[allDraws.length - 1].dateYmd;
     }
 
     // Nếu targetDateYmd nằm ngoài khoảng cache, xử lý nhanh để tránh cào API lãng phí
@@ -424,5 +395,5 @@ module.exports = {
     fetchDrawDetail,
     findDrawIdForDate,
     fetchWithRetry,
-    cache
+    get cache() { return db.getLocalCache(); }
 };

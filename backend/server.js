@@ -1,7 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const ExcelJS = require('exceljs');
-const { fetchLatestDrawInfo, fetchDrawDetail, findDrawIdForDate, fetchWithRetry, cache } = require('./scraper');
+const { fetchLatestDrawInfo, fetchDrawDetail, findDrawIdForDate, fetchWithRetry } = require('./scraper');
+const db = require('./db');
+const cron = require('node-cron');
 
 const app = express();
 const PORT = process.env.PORT || 5500;
@@ -229,15 +231,20 @@ app.get('/api/scrape-stream', async (req, res) => {
 async function getPreviousDrawDetail(game, currentId) {
     if (currentId <= 1) return null;
     const prevId = currentId - 1;
-    if (cache[game] && cache[game][prevId]) {
-        return cache[game][prevId];
-    }
     try {
-        return await fetchDrawDetail(game, prevId, true);
+        return await db.getDraw(game, prevId) || await fetchDrawDetail(game, prevId, true);
     } catch (e) {
         console.error(`Could not fetch previous draw #${prevId} for delta calculation:`, e.message);
         return null;
     }
+}
+
+// Helper to convert date string "DD/MM/YYYY" to "YYYY-MM-DD"
+function dateToYmd(dateStr) {
+    if (!dateStr) return '';
+    const parts = dateStr.split('/');
+    if (parts.length !== 3) return '';
+    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
 }
 
 // 3. Export to Excel
@@ -256,13 +263,17 @@ app.get('/api/export', async (req, res) => {
     }
 
     try {
+        const cachedDraws = await db.getDrawsInRange(game, sId, eId);
+        const drawsMap = {};
+        cachedDraws.forEach(d => { drawsMap[d.drawId] = d; });
+
         const draws = [];
         for (let id = sId; id <= eId; id++) {
-            if (cache[game] && cache[game][id]) {
-                draws.push(cache[game][id]);
+            if (drawsMap[id]) {
+                draws.push(drawsMap[id]);
             } else {
-                // Fetch and cache it if somehow missing
                 try {
+                    console.log(`[export] Missing draw #${id} in DB. Scraping...`);
                     const detail = await fetchDrawDetail(game, id, true);
                     draws.push(detail);
                 } catch (e) {
@@ -558,7 +569,7 @@ app.get('/api/export', async (req, res) => {
     }
 });
 
-// Tự động kiểm tra và cào kỳ quay mới để cập nhật cache
+// Tự động kiểm tra và cào kỳ quay mới để cập nhật DB
 async function autoUpdateCache() {
     try {
         console.log('[auto-crawl] Bắt đầu tự động kiểm tra kỳ quay mới trên Vietlott...');
@@ -566,43 +577,107 @@ async function autoUpdateCache() {
             const latestInfo = await fetchLatestDrawInfo(game);
             const latestId = latestInfo.drawId;
             
-            // Nếu kỳ mới nhất chưa có trong cache -> cào chi tiết và lưu
-            if (!cache[game] || !cache[game][latestId]) {
-                console.log(`[auto-crawl] Phát hiện kỳ mới #${latestId} của game ${game} chưa có trong cache. Tiến hành cào...`);
-                await fetchDrawDetail(game, latestId, false); // Cào và lưu vào cache
-                console.log(`[auto-crawl] Tự động cập nhật cache thành công kỳ #${latestId} cho game ${game}`);
+            const existing = await db.getDraw(game, latestId);
+            if (!existing) {
+                console.log(`[auto-crawl] Phát hiện kỳ mới #${latestId} của game ${game} chưa có trong DB. Tiến hành cào...`);
+                await fetchDrawDetail(game, latestId, false); // Cào và lưu vào DB
+                console.log(`[auto-crawl] Tự động cập nhật DB thành công kỳ #${latestId} cho game ${game}`);
             }
         }
         console.log('[auto-crawl] Hoàn tất kiểm tra kỳ quay mới.');
     } catch (e) {
-        console.error('[auto-crawl] Lỗi tự động cập nhật cache:', e.message);
+        console.error('[auto-crawl] Lỗi tự động cập nhật DB:', e.message);
     }
 }
 
-app.listen(PORT, () => {
-    console.log(`Backend server is running on http://localhost:${PORT}`);
-
-    // Chạy kiểm tra kỳ quay mới lần đầu tiên sau 10 giây khi server khởi động
-    setTimeout(autoUpdateCache, 10000);
-
-    // Chạy tự động cập nhật cache định kỳ mỗi 1 tiếng
-    setInterval(autoUpdateCache, 60 * 60 * 1000);
-
-    // Self-ping mỗi 14 phút để tránh Render sleep (chỉ trên production)
-    if (process.env.NODE_ENV === 'production' && process.env.RENDER_EXTERNAL_URL) {
-        const pingUrl = `${process.env.RENDER_EXTERNAL_URL}/`;
-        setInterval(async () => {
-            try {
-                const https = require('https');
-                https.get(pingUrl, (res) => {
-                    console.log(`Self-ping OK: ${res.statusCode}`);
-                }).on('error', (err) => {
-                    console.log(`Self-ping failed: ${err.message}`);
-                });
-            } catch (e) {
-                console.log('Self-ping error:', e.message);
-            }
-        }, 14 * 60 * 1000); // 14 phút
-        console.log(`Self-ping enabled: ${pingUrl} mỗi 14 phút`);
+// 4. API mới: Nhập thủ công dữ liệu kỳ quay
+app.post('/api/draws', async (req, res) => {
+    const { game, drawId, dateStr, numbers, prizes } = req.body;
+    if (!game || !drawId || !dateStr || !numbers || !prizes) {
+        return res.status(400).json({ error: 'Thiếu thông tin bắt buộc (game, drawId, dateStr, numbers, prizes)' });
     }
+    const id = parseInt(drawId, 10);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'Mã kỳ quay phải là số hợp lệ' });
+    }
+
+    try {
+        const drawObj = {
+            drawId: id,
+            drawIdStr: String(id).padStart(5, '0'),
+            dateStr,
+            dateYmd: dateToYmd(dateStr),
+            numbers: Array.isArray(numbers) ? numbers.map(String) : [],
+            prizes,
+            scrapedAt: new Date().toISOString()
+        };
+
+        const success = await db.saveDraw(game, drawObj);
+        if (success) {
+            return res.json({ success: true, message: `Lưu kỳ quay #${id} của game ${game} thành công!` });
+        } else {
+            return res.status(500).json({ error: 'Không thể lưu dữ liệu vào cơ sở dữ liệu' });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 5. API mới: Yêu cầu cào nhanh một kỳ quay bất kỳ bằng Draw ID
+app.post('/api/draws/quick-fetch', async (req, res) => {
+    const { game, drawId } = req.body;
+    if (!game || !drawId) {
+        return res.status(400).json({ error: 'Thiếu game hoặc drawId' });
+    }
+    const id = parseInt(drawId, 10);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'Mã kỳ quay không hợp lệ' });
+    }
+
+    try {
+        const detail = await fetchDrawDetail(game, id, false); // force scrape to update DB
+        res.json({ success: true, message: `Đã cào và lưu thành công kỳ quay #${id} của game ${game}!`, data: detail });
+    } catch (e) {
+        res.status(500).json({ error: `Không thể cào dữ liệu kỳ quay #${id} từ Vietlott: ${e.message}` });
+    }
+});
+
+// Khởi động database trước khi lắng nghe kết nối
+db.initDb().then(() => {
+    app.listen(PORT, () => {
+        console.log(`Backend server is running on http://localhost:${PORT}`);
+
+        // Lập lịch tự động cào lúc 19:00 hàng ngày từ Thứ 3 đến Chủ Nhật (Múi giờ Việt Nam)
+        cron.schedule('0 19 * * 0,2,3,4,5,6', () => {
+            console.log('[cron] Bắt đầu tự động cào kết quả Vietlott lúc 19h (Thứ 3 -> Chủ nhật)...');
+            autoUpdateCache();
+        }, {
+            scheduled: true,
+            timezone: 'Asia/Ho_Chi_Minh'
+        });
+
+        // Chạy kiểm tra kỳ quay mới lần đầu tiên sau 10 giây khi server khởi động
+        setTimeout(autoUpdateCache, 10000);
+
+        // Chạy tự động kiểm tra định kỳ mỗi 1 tiếng
+        setInterval(autoUpdateCache, 60 * 60 * 1000);
+
+        // Self-ping mỗi 14 phút để tránh Render sleep (chỉ trên production)
+        if (process.env.NODE_ENV === 'production' && process.env.RENDER_EXTERNAL_URL) {
+            const pingUrl = `${process.env.RENDER_EXTERNAL_URL}/`;
+            setInterval(async () => {
+                try {
+                    const https = require('https');
+                    https.get(pingUrl, (res) => {
+                        console.log(`Self-ping OK: ${res.statusCode}`);
+                    }).on('error', (err) => {
+                        console.log(`Self-ping failed: ${err.message}`);
+                    });
+                } catch (e) {
+                    console.log('Self-ping error:', e.message);
+                }
+            }, 14 * 60 * 1000);
+            console.log(`Self-ping enabled: ${pingUrl} mỗi 14 phút`);
+        }
+    });
 });

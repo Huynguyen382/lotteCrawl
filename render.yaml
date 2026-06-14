@@ -1,3 +1,8 @@
+databases:
+  - name: vietlott-db
+    databaseName: vietlott
+    plan: free
+
 services:
   # Backend Service
   - type: web
@@ -11,6 +16,10 @@ services:
         value: production
       - key: PORT
         sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vietlott-db
+          property: connectionString
     healthCheckPath: /api/latest?game=645
 
   # Frontend Service (Static Site)
