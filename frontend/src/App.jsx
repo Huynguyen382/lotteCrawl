@@ -1197,7 +1197,8 @@ function App() {
               <div className="stats-wrapper">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '0 8px', gap: '16px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    Tính toán vắng mặt dựa trên **{visibleResults.length}** kỳ quay đã cào.
+                    Tính toán vắng mặt dựa trên **{visibleResults.length}** kỳ quay đã cào. 
+                    Tổng số kỳ vắng mặt của các số: <strong style={{ color: 'var(--warning)', marginLeft: '4px' }}>{getAbsenceStatistics().reduce((sum, item) => sum + item.absentDraws, 0)} kỳ</strong>.
                   </span>
                   
                   <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
