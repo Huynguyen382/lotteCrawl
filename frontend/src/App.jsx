@@ -1077,6 +1077,7 @@ function App() {
                           <th>Ngày Quay</th>
                           <th>Bộ Số Trúng Thưởng (Chênh lệch)</th>
                           <th style={{ textAlign: 'center', width: '110px' }}>Tổng (Lệch)</th>
+                          <th style={{ textAlign: 'center', width: '110px' }}>Tổng Vắng</th>
                           <th style={{ textAlign: 'right' }}>Giá trị Jackpot</th>
                           <th style={{ textAlign: 'right' }}>Số người trúng</th>
                         </tr>
@@ -1086,6 +1087,7 @@ function App() {
                           <th>Ngày Quay</th>
                           <th>Bộ Số Trúng Thưởng (1-6 | Bonus)</th>
                           <th style={{ textAlign: 'center', width: '110px' }}>Tổng (Lệch)</th>
+                          <th style={{ textAlign: 'center', width: '110px' }}>Tổng Vắng</th>
                           <th style={{ textAlign: 'right' }}>Jackpot 1</th>
                           <th style={{ textAlign: 'right' }}>Jackpot 2</th>
                         </tr>
@@ -1103,7 +1105,12 @@ function App() {
                               <td>
                                 <div className="balls-container">
                                   {draw.numbers.map((n, i) => (
-                                    <span key={i} className="ball">{n}</span>
+                                    <div key={i} className="ball-wrapper">
+                                      <span className="ball">{n}</span>
+                                      <span className="ball-absence">
+                                        {draw.individualAbsences ? draw.individualAbsences[i] : 'N/A'}
+                                      </span>
+                                    </div>
                                   ))}
                                 </div>
                                 {numDeltas.length > 0 && (
@@ -1131,6 +1138,9 @@ function App() {
                                   </div>
                                 )}
                               </td>
+                              <td style={{ textAlign: 'center', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                                {draw.totalAbsence !== undefined ? draw.totalAbsence : '-'}
+                              </td>
                               <td style={{ textAlign: 'right', fontWeight: '600' }}>{jackpot.valueStr} đ</td>
                               <td style={{ textAlign: 'right' }}>{jackpot.count}</td>
                             </tr>
@@ -1145,10 +1155,20 @@ function App() {
                               <td>
                                 <div className="balls-container">
                                   {draw.numbers.slice(0, 6).map((n, i) => (
-                                    <span key={i} className="ball">{n}</span>
+                                    <div key={i} className="ball-wrapper">
+                                      <span className="ball">{n}</span>
+                                      <span className="ball-absence">
+                                        {draw.individualAbsences ? draw.individualAbsences[i] : 'N/A'}
+                                      </span>
+                                    </div>
                                   ))}
-                                  <span style={{ color: 'var(--border-color)', alignSelf: 'center', fontSize: '1.2rem' }}>|</span>
-                                  <span className="ball power-bonus">{draw.numbers[6]}</span>
+                                  <span style={{ color: 'var(--border-color)', alignSelf: 'flex-start', marginTop: '4px', fontSize: '1.2rem' }}>|</span>
+                                  <div className="ball-wrapper">
+                                    <span className="ball power-bonus">{draw.numbers[6]}</span>
+                                    <span className="ball-absence" style={{ color: 'var(--warning)' }}>
+                                      {draw.individualAbsences ? draw.individualAbsences[6] : 'N/A'}
+                                    </span>
+                                  </div>
                                 </div>
                                 {numDeltas.length > 0 && (
                                   <div className="deltas-container" style={{ display: 'flex', gap: '8px', marginTop: '4px', paddingLeft: '2px', fontSize: '0.75rem', fontWeight: 'bold' }}>
@@ -1183,6 +1203,9 @@ function App() {
                                   </div>
                                 )}
                               </td>
+                              <td style={{ textAlign: 'center', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                                {draw.totalAbsence !== undefined ? draw.totalAbsence : '-'}
+                              </td>
                               <td style={{ textAlign: 'right', fontWeight: '600' }}>{jp1.valueStr} đ ({jp1.count})</td>
                               <td style={{ textAlign: 'right', fontWeight: '600', color: 'var(--warning)' }}>{jp2.valueStr} đ ({jp2.count})</td>
                             </tr>
@@ -1197,8 +1220,7 @@ function App() {
               <div className="stats-wrapper">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '0 8px', gap: '16px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    Tính toán vắng mặt dựa trên **{visibleResults.length}** kỳ quay đã cào. 
-                    Tổng số kỳ vắng mặt của các số: <strong style={{ color: 'var(--warning)', marginLeft: '4px' }}>{getAbsenceStatistics().reduce((sum, item) => sum + item.absentDraws, 0)} kỳ</strong>.
+                    Tính toán vắng mặt dựa trên **{visibleResults.length}** kỳ quay đã cào.
                   </span>
                   
                   <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>

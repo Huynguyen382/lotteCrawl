@@ -227,6 +227,52 @@ app.get('/api/scrape-stream', async (req, res) => {
 
         // Sắp xếp kết quả theo drawId trước khi trả về
         results.sort((a, b) => a.drawId - b.drawId);
+
+        try {
+            sendEvent('log', { message: 'Đang tính toán chỉ số vắng mặt (Tổng Vắng)...' });
+            const allHistory = await db.getDrawsInRange(game, 1, endId);
+            allHistory.sort((a, b) => a.drawId - b.drawId);
+
+            const lastSeenIndex = {};
+            const absencesByDrawId = {};
+
+            allHistory.forEach((draw, idx) => {
+                const currentNums = draw.numbers.map(n => parseInt(n, 10));
+                const individualAbsences = currentNums.map((num) => {
+                    if (lastSeenIndex[num] !== undefined) {
+                        const prevIdx = lastSeenIndex[num];
+                        return idx - prevIdx - 1;
+                    } else {
+                        return 'N/A';
+                    }
+                });
+
+                const mainAbs = individualAbsences.slice(0, 6);
+                const hasNA = mainAbs.some(val => val === 'N/A');
+                const totalAbsence = hasNA ? 'N/A' : mainAbs.reduce((sum, val) => sum + val, 0);
+
+                absencesByDrawId[draw.drawId] = {
+                    individualAbsences,
+                    totalAbsence
+                };
+
+                currentNums.forEach((num) => {
+                    lastSeenIndex[num] = idx;
+                });
+            });
+
+            // Gắn thông tin vắng mặt vào từng kỳ quay trong results
+            results.forEach((draw) => {
+                const abs = absencesByDrawId[draw.drawId];
+                if (abs) {
+                    draw.individualAbsences = abs.individualAbsences;
+                    draw.totalAbsence = abs.totalAbsence;
+                }
+            });
+        } catch (e) {
+            console.error('Lỗi tính toán khoảng vắng mặt trong scrape-stream:', e.message);
+            sendEvent('log', { message: `Cảnh báo: Không thể tính toán khoảng vắng mặt: ${e.message}` });
+        }
         
         sendEvent('complete', { 
             startId, 
@@ -304,6 +350,41 @@ app.get('/api/export', async (req, res) => {
             return res.status(404).json({ error: 'No draw data found to export' });
         }
 
+        // Tính toán khoảng vắng mặt cho từng số và Tổng Vắng của mỗi kỳ quay
+        const allHistory = await db.getDrawsInRange(game, 1, eId);
+        allHistory.sort((a, b) => a.drawId - b.drawId);
+
+        const lastSeenIndex = {};
+        const absencesByDrawId = {};
+
+        allHistory.forEach((draw, idx) => {
+            const currentNums = draw.numbers.map(n => parseInt(n, 10));
+            // Power 6/55 có 7 số, Mega 6/45 có 6 số
+            const individualAbsences = currentNums.map((num) => {
+                if (lastSeenIndex[num] !== undefined) {
+                    const prevIdx = lastSeenIndex[num];
+                    return idx - prevIdx - 1;
+                } else {
+                    return 'N/A';
+                }
+            });
+
+            // Tổng Vắng là tổng vắng mặt của 6 số chính
+            const mainAbs = individualAbsences.slice(0, 6);
+            const hasNA = mainAbs.some(val => val === 'N/A');
+            const totalAbsence = hasNA ? 'N/A' : mainAbs.reduce((sum, val) => sum + val, 0);
+
+            absencesByDrawId[draw.drawId] = {
+                individualAbsences,
+                totalAbsence
+            };
+
+            // Cập nhật vị trí xuất hiện cuối cùng
+            currentNums.forEach((num) => {
+                lastSeenIndex[num] = idx;
+            });
+        });
+
         // Lấy kỳ quay liền trước sId để tính delta cho kỳ đầu tiên
         const firstDrawPrev = await getPreviousDrawDetail(game, sId);
 
@@ -338,7 +419,7 @@ app.get('/api/export', async (req, res) => {
                 'Kỳ Quay', 'Ngày Quay', 
                 'Số 1', 'Số 2', 'Số 3', 'Số 4', 'Số 5', 'Số 6',
                 'Lệch S1', 'Lệch S2', 'Lệch S3', 'Lệch S4', 'Lệch S5', 'Lệch S6',
-                'Tổng', 'Lệch Tổng',
+                'Tổng', 'Lệch Tổng', 'Tổng Vắng',
                 'Giá Trị Jackpot (đ)', 'Trúng Jackpot', 
                 'Trúng Giải Nhất (10M)', 'Trúng Giải Nhì (300k)', 'Trúng Giải Ba (30k)'
             ];
@@ -347,7 +428,7 @@ app.get('/api/export', async (req, res) => {
                 'Kỳ Quay', 'Ngày Quay', 
                 'Số 1', 'Số 2', 'Số 3', 'Số 4', 'Số 5', 'Số 6', 'Số Đặc Biệt',
                 'Lệch S1', 'Lệch S2', 'Lệch S3', 'Lệch S4', 'Lệch S5', 'Lệch S6', 'Lệch SĐB',
-                'Tổng', 'Lệch Tổng',
+                'Tổng', 'Lệch Tổng', 'Tổng Vắng',
                 'Giá Trị Jackpot 1 (đ)', 'Trúng Jackpot 1', 
                 'Giá Trị Jackpot 2 (đ)', 'Trúng Jackpot 2', 
                 'Trúng Giải Nhất (40M)', 'Trúng Giải Nhì (500k)', 'Trúng Giải Ba (50k)'
@@ -430,6 +511,13 @@ app.get('/api/export', async (req, res) => {
                 }
             }
 
+            const drawAbs = absencesByDrawId[draw.drawId] || { individualAbsences: [], totalAbsence: 'N/A' };
+            const absList = drawAbs.individualAbsences;
+            const getValWithAbs = (idx) => {
+                const abs = absList[idx];
+                return abs !== undefined ? `${draw.numbers[idx]} (${abs})` : draw.numbers[idx];
+            };
+
             if (game === '645') {
                 const jack = draw.prizes.find(p => p.name.toLowerCase().includes('jackpot')) || { value: 0, count: 0 };
                 const g1 = draw.prizes.find(p => p.name.includes('Nhất')) || { count: 0 };
@@ -439,12 +527,12 @@ app.get('/api/export', async (req, res) => {
                 rowData = [
                     `#${draw.drawIdStr}`,
                     draw.dateStr,
-                    parseInt(draw.numbers[0], 10),
-                    parseInt(draw.numbers[1], 10),
-                    parseInt(draw.numbers[2], 10),
-                    parseInt(draw.numbers[3], 10),
-                    parseInt(draw.numbers[4], 10),
-                    parseInt(draw.numbers[5], 10),
+                    getValWithAbs(0),
+                    getValWithAbs(1),
+                    getValWithAbs(2),
+                    getValWithAbs(3),
+                    getValWithAbs(4),
+                    getValWithAbs(5),
                     numDeltas[0],
                     numDeltas[1],
                     numDeltas[2],
@@ -453,6 +541,7 @@ app.get('/api/export', async (req, res) => {
                     numDeltas[5],
                     currentSum,
                     sumDiff,
+                    drawAbs.totalAbsence,
                     jack.value,
                     jack.count,
                     g1.count,
@@ -469,13 +558,13 @@ app.get('/api/export', async (req, res) => {
                 rowData = [
                     `#${draw.drawIdStr}`,
                     draw.dateStr,
-                    parseInt(draw.numbers[0], 10),
-                    parseInt(draw.numbers[1], 10),
-                    parseInt(draw.numbers[2], 10),
-                    parseInt(draw.numbers[3], 10),
-                    parseInt(draw.numbers[4], 10),
-                    parseInt(draw.numbers[5], 10),
-                    parseInt(draw.numbers[6], 10), // Bonus ball
+                    getValWithAbs(0),
+                    getValWithAbs(1),
+                    getValWithAbs(2),
+                    getValWithAbs(3),
+                    getValWithAbs(4),
+                    getValWithAbs(5),
+                    getValWithAbs(6), // Bonus ball
                     numDeltas[0],
                     numDeltas[1],
                     numDeltas[2],
@@ -485,6 +574,7 @@ app.get('/api/export', async (req, res) => {
                     numDeltas[6], // Bonus ball delta
                     currentSum,
                     sumDiff,
+                    drawAbs.totalAbsence,
                     jack1.value,
                     jack1.count,
                     jack2.value,
@@ -510,7 +600,6 @@ app.get('/api/export', async (req, res) => {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
                     } else if (colIdx >= 2 && colIdx <= 7) {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
-                        cell.numFmt = '00';
                     } else if (colIdx >= 8 && colIdx <= 13) {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
                         cell.numFmt = '+0;-0;0';
@@ -520,6 +609,11 @@ app.get('/api/export', async (req, res) => {
                     } else if (colIdx === 15) {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
                         cell.numFmt = '+0;-0;0';
+                    } else if (colIdx === 16) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        if (typeof val === 'number') {
+                            cell.numFmt = '#,##0';
+                        }
                     } else {
                         cell.alignment = { vertical: 'middle', horizontal: 'right' };
                         if (typeof val === 'number') {
@@ -531,7 +625,6 @@ app.get('/api/export', async (req, res) => {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
                     } else if (colIdx >= 2 && colIdx <= 8) {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
-                        cell.numFmt = '00';
                     } else if (colIdx >= 9 && colIdx <= 15) {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
                         cell.numFmt = '+0;-0;0';
@@ -541,6 +634,11 @@ app.get('/api/export', async (req, res) => {
                     } else if (colIdx === 17) {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
                         cell.numFmt = '+0;-0;0';
+                    } else if (colIdx === 18) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        if (typeof val === 'number') {
+                            cell.numFmt = '#,##0';
+                        }
                     } else {
                         cell.alignment = { vertical: 'middle', horizontal: 'right' };
                         if (typeof val === 'number') {
