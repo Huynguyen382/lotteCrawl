@@ -3,7 +3,7 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const db = require('./db');
+const db = require('../config/db');
 
 // Utility helper to add padding
 function padDrawId(drawId) {
@@ -128,7 +128,7 @@ async function fetchWithRetry(url, retries = 3) {
 
 /**
  * Fetch the latest draw ID from Vietlott site
- * @param {string} gameType - '645' or '655'
+ * @param {string} gameType - '645', '655' or '535'
  */
 async function fetchLatestDrawInfo(gameType) {
     const url = `https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/${gameType}`;
@@ -178,7 +178,7 @@ async function fetchLatestDrawInfo(gameType) {
 
 /**
  * Fetch detail of a single drawing
- * @param {string} gameType - '645' or '655'
+ * @param {string} gameType - '645', '655' or '535'
  * @param {number} drawId - Draw ID
  * @param {boolean} useCache - Whether to check local cache
  */
@@ -191,9 +191,6 @@ async function fetchDrawDetail(gameType, drawId, useCache = true) {
     const paddedId = padDrawId(drawId);
     const url = `https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/${gameType}?id=${paddedId}&nocatche=1`;
     
-    // Add small delay to prevent blocking
-    // Dùng ScraperAPI thì cần delay lâu hơn do rate limit
-    // Với concurrency thì delay có thể giảm xuống
     const delayMs = process.env.SCRAPER_API_KEY ? 800 : 100;
     await sleep(delayMs);
 
@@ -300,21 +297,14 @@ async function getDrawDateYmd(gameType, drawId) {
         const detail = await fetchDrawDetail(gameType, drawId, true);
         return detail.dateYmd;
     } catch (error) {
-        // Return null if failed
         return null;
     }
 }
 
 /**
  * Find boundary draw ID for a date using binary search
- * @param {string} gameType - '645' or '655'
- * @param {string} targetDateYmd - Target date in YYYY-MM-DD format
- * @param {string} boundaryType - 'start' (first draw >= date) or 'end' (last draw <= date)
- * @param {number} latestId - The latest draw ID (upper bound)
- * @param {function} onProgress - Progress reporting callback
  */
 async function findDrawIdForDate(gameType, targetDateYmd, boundaryType, latestId, onProgress) {
-    // Lấy danh sách ID đã có trong cache/db và lọc các kỳ <= latestId trên web thực tế
     const allDraws = (await db.getAllDrawsMetadata(gameType)).filter(d => d.drawId <= latestId);
     
     let left = 1;

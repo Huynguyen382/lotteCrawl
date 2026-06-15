@@ -1,7 +1,9 @@
-const { fetchLatestDrawInfo, fetchDrawDetail, findDrawIdForDate } = require('./scraper');
+const { fetchLatestDrawInfo, fetchDrawDetail, findDrawIdForDate } = require('../src/services/scraperService');
+const db = require('../src/config/db');
 
 async function test() {
     try {
+        await db.initDb();
         console.log('--- TEST 1: Fetch Latest Draw Info (Mega 6/45) ---');
         const latestMega = await fetchLatestDrawInfo('645');
         console.log('Latest Mega:', latestMega);

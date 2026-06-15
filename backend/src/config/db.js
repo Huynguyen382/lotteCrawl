@@ -3,9 +3,9 @@ const fs = require('fs');
 const path = require('path');
 
 // Nạp cấu hình biến môi trường từ file .env ở thư mục backend
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 
-const CACHE_FILE = path.join(__dirname, 'cache.json');
+const CACHE_FILE = path.join(__dirname, '..', '..', 'cache.json');
 const connectionString = process.env.DATABASE_URL;
 
 let pool = null;
@@ -62,15 +62,15 @@ async function initDb() {
             // Create table
             const createTableQuery = `
                 CREATE TABLE IF NOT EXISTS draw_results (
-                    game VARCHAR(10) NOT NULL,
-                    draw_id INT NOT NULL,
-                    draw_id_str VARCHAR(10) NOT NULL,
-                    date_str VARCHAR(20) NOT NULL,
-                    date_ymd VARCHAR(20) NOT NULL,
-                    numbers JSONB NOT NULL,
-                    prizes JSONB NOT NULL,
-                    scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (game, draw_id)
+                     game VARCHAR(10) NOT NULL,
+                     draw_id INT NOT NULL,
+                     draw_id_str VARCHAR(10) NOT NULL,
+                     date_str VARCHAR(20) NOT NULL,
+                     date_ymd VARCHAR(20) NOT NULL,
+                     numbers JSONB NOT NULL,
+                     prizes JSONB NOT NULL,
+                     scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                     PRIMARY KEY (game, draw_id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_draw_results_date_ymd ON draw_results(game, date_ymd);
             `;
@@ -124,15 +124,15 @@ async function saveDraw(game, draw) {
         try {
             await pool.query(
                 `INSERT INTO draw_results (game, draw_id, draw_id_str, date_str, date_ymd, numbers, prizes, scraped_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                 ON CONFLICT (game, draw_id) 
-                 DO UPDATE SET 
-                    draw_id_str = EXCLUDED.draw_id_str,
-                    date_str = EXCLUDED.date_str,
-                    date_ymd = EXCLUDED.date_ymd,
-                    numbers = EXCLUDED.numbers,
-                    prizes = EXCLUDED.prizes,
-                    scraped_at = EXCLUDED.scraped_at`,
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                  ON CONFLICT (game, draw_id) 
+                  DO UPDATE SET 
+                     draw_id_str = EXCLUDED.draw_id_str,
+                     date_str = EXCLUDED.date_str,
+                     date_ymd = EXCLUDED.date_ymd,
+                     numbers = EXCLUDED.numbers,
+                     prizes = EXCLUDED.prizes,
+                     scraped_at = EXCLUDED.scraped_at`,
                 [
                     game,
                     id,
@@ -196,9 +196,9 @@ async function getDrawsInRange(game, startId, endId) {
         try {
             const res = await pool.query(
                 `SELECT draw_id as "drawId", draw_id_str as "drawIdStr", date_str as "dateStr", date_ymd as "dateYmd", numbers, prizes, scraped_at as "scrapedAt" 
-                 FROM draw_results 
-                 WHERE game = $1 AND draw_id >= $2 AND draw_id <= $3 
-                 ORDER BY draw_id ASC`,
+                  FROM draw_results 
+                  WHERE game = $1 AND draw_id >= $2 AND draw_id <= $3 
+                  ORDER BY draw_id ASC`,
                 [game, sId, eId]
             );
             return res.rows;

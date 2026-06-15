@@ -1,4 +1,5 @@
-const { fetchLatestDrawInfo, fetchDrawDetail } = require('./scraper');
+const { fetchLatestDrawInfo, fetchDrawDetail } = require('../src/services/scraperService');
+const db = require('../src/config/db');
 
 async function runTest() {
     console.log('--- KIỂM TRA SCRAPER VỚI CÁC CẤU HÌNH ---');
@@ -8,6 +9,7 @@ async function runTest() {
     console.log('NODE_ENV:', process.env.NODE_ENV);
 
     try {
+        await db.initDb();
         console.log('\n1. Thử cào thông tin kỳ mới nhất Mega 6/45...');
         const info = await fetchLatestDrawInfo('645');
         console.log('Thành công! Kết quả:', info);
