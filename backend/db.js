@@ -10,14 +10,17 @@ const connectionString = process.env.DATABASE_URL;
 
 let pool = null;
 let usePostgres = false;
-let localCache = { "645": {}, "655": {} };
+let localCache = { "645": {}, "655": {}, "535": {} };
 
 function loadLocalCache() {
     try {
         if (fs.existsSync(CACHE_FILE)) {
             const data = fs.readFileSync(CACHE_FILE, 'utf8');
             localCache = JSON.parse(data);
-            console.log(`[db-local] Loaded local JSON cache: Mega 6/45 (${Object.keys(localCache["645"] || {}).length} draws), Power 6/55 (${Object.keys(localCache["655"] || {}).length} draws)`);
+            if (!localCache["645"]) localCache["645"] = {};
+            if (!localCache["655"]) localCache["655"] = {};
+            if (!localCache["535"]) localCache["535"] = {};
+            console.log(`[db-local] Loaded local JSON cache: Mega 6/45 (${Object.keys(localCache["645"] || {}).length} draws), Power 6/55 (${Object.keys(localCache["655"] || {}).length} draws), Lotto 5/35 (${Object.keys(localCache["535"] || {}).length} draws)`);
         } else {
             saveLocalCache();
         }

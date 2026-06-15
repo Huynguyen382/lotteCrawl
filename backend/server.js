@@ -75,9 +75,9 @@ app.get('/api/proxy', async (req, res) => {
 
 // 1. Get latest draw info
 app.get('/api/latest', async (req, res) => {
-    const { game } = req.query; // '645' or '655'
-    if (!game || (game !== '645' && game !== '655')) {
-        return res.status(400).json({ error: 'Game type must be 645 or 655' });
+    const { game } = req.query; // '645', '655', or '535'
+    if (!game || (game !== '645' && game !== '655' && game !== '535')) {
+        return res.status(400).json({ error: 'Game type must be 645, 655 or 535' });
     }
     try {
         // Lấy thông tin kỳ mới nhất trong DB trước để tránh gọi Vietlott bị 403
@@ -247,7 +247,8 @@ app.get('/api/scrape-stream', async (req, res) => {
                     }
                 });
 
-                const mainAbs = individualAbsences.slice(0, 6);
+                const mainLength = game === '535' ? 5 : 6;
+                const mainAbs = individualAbsences.slice(0, mainLength);
                 const hasNA = mainAbs.some(val => val === 'N/A');
                 const totalAbsence = hasNA ? 'N/A' : mainAbs.reduce((sum, val) => sum + val, 0);
 
@@ -369,8 +370,9 @@ app.get('/api/export', async (req, res) => {
                 }
             });
 
-            // Tổng Vắng là tổng vắng mặt của 6 số chính
-            const mainAbs = individualAbsences.slice(0, 6);
+            // Tổng Vắng là tổng vắng mặt của 6 số chính (5 số chính cho 535)
+            const mainLength = game === '535' ? 5 : 6;
+            const mainAbs = individualAbsences.slice(0, mainLength);
             const hasNA = mainAbs.some(val => val === 'N/A');
             const totalAbsence = hasNA ? 'N/A' : mainAbs.reduce((sum, val) => sum + val, 0);
 
@@ -389,7 +391,7 @@ app.get('/api/export', async (req, res) => {
         const firstDrawPrev = await getPreviousDrawDetail(game, sId);
 
         const workbook = new ExcelJS.Workbook();
-        const sheetName = game === '645' ? 'Mega 6-45' : 'Power 6-55';
+        const sheetName = game === '645' ? 'Mega 6-45' : (game === '655' ? 'Power 6-55' : 'Lotto 5-35');
         const worksheet = workbook.addWorksheet(sheetName);
 
         // Styling configuration
@@ -410,7 +412,7 @@ app.get('/api/export', async (req, res) => {
         // Title Block
         const titleText = game === '645' 
             ? `KẾT QUẢ CÀO DỮ LIỆU VIETLOTT MEGA 6/45 (KỲ #${startId} - #${endId})`
-            : `KẾT QUẢ CÀO DỮ LIỆU VIETLOTT POWER 6/55 (KỲ #${startId} - #${endId})`;
+            : (game === '655' ? `KẾT QUẢ CÀO DỮ LIỆU VIETLOTT POWER 6/55 (KỲ #${startId} - #${endId})` : `KẾT QUẢ CÀO DỮ LIỆU VIETLOTT LOTTO 5/35 (KỲ #${startId} - #${endId})`);
         
         // Headers
         let headers = [];
@@ -423,7 +425,7 @@ app.get('/api/export', async (req, res) => {
                 'Giá Trị Jackpot (đ)', 'Trúng Jackpot', 
                 'Trúng Giải Nhất (10M)', 'Trúng Giải Nhì (300k)', 'Trúng Giải Ba (30k)'
             ];
-        } else {
+        } else if (game === '655') {
             headers = [
                 'Kỳ Quay', 'Ngày Quay', 
                 'Số 1', 'Số 2', 'Số 3', 'Số 4', 'Số 5', 'Số 6', 'Số Đặc Biệt',
@@ -432,6 +434,16 @@ app.get('/api/export', async (req, res) => {
                 'Giá Trị Jackpot 1 (đ)', 'Trúng Jackpot 1', 
                 'Giá Trị Jackpot 2 (đ)', 'Trúng Jackpot 2', 
                 'Trúng Giải Nhất (40M)', 'Trúng Giải Nhì (500k)', 'Trúng Giải Ba (50k)'
+            ];
+        } else if (game === '535') {
+            headers = [
+                'Kỳ Quay', 'Ngày Quay', 
+                'Số 1', 'Số 2', 'Số 3', 'Số 4', 'Số 5', 'Số Đặc Biệt',
+                'Lệch S1', 'Lệch S2', 'Lệch S3', 'Lệch S4', 'Lệch S5', 'Lệch SĐB',
+                'Tổng', 'Lệch Tổng', 'Tổng Vắng',
+                'Giá Trị Jackpot (đ)', 'Trúng Jackpot', 
+                'Trúng Giải Nhất (10M)', 'Trúng Giải Nhì (5M)', 'Trúng Giải Ba (500k)',
+                'Trúng Giải Tư (100k)', 'Trúng Giải Năm (30k)', 'Trúng Giải Khuyến Khích (10k)'
             ];
         }
 
@@ -495,19 +507,26 @@ app.get('/api/export', async (req, res) => {
                 if (game === '645') {
                     curSorted = [...currentNums].sort((a, b) => a - b);
                     prevSorted = [...prevNums].sort((a, b) => a - b);
-                } else {
+                } else if (game === '655') {
                     const curMain = currentNums.slice(0, 6).sort((a, b) => a - b);
                     const prevMain = prevNums.slice(0, 6).sort((a, b) => a - b);
                     curSorted = [...curMain, currentNums[6]];
                     prevSorted = [...prevMain, prevNums[6]];
+                } else if (game === '535') {
+                    const curMain = currentNums.slice(0, 5).sort((a, b) => a - b);
+                    const prevMain = prevNums.slice(0, 5).sort((a, b) => a - b);
+                    curSorted = [...curMain, currentNums[5]];
+                    prevSorted = [...prevMain, prevNums[5]];
                 }
 
                 numDeltas = curSorted.map((num, idx) => num - prevSorted[idx]);
             } else {
                 if (game === '645') {
                     numDeltas = [null, null, null, null, null, null];
-                } else {
+                } else if (game === '655') {
                     numDeltas = [null, null, null, null, null, null, null];
+                } else if (game === '535') {
+                    numDeltas = [null, null, null, null, null, null];
                 }
             }
 
@@ -548,7 +567,7 @@ app.get('/api/export', async (req, res) => {
                     g2.count,
                     g3.count
                 ];
-            } else {
+            } else if (game === '655') {
                 const jack1 = draw.prizes.find(p => p.name.includes('Jackpot 1')) || { value: 0, count: 0 };
                 const jack2 = draw.prizes.find(p => p.name.includes('Jackpot 2')) || { value: 0, count: 0 };
                 const g1 = draw.prizes.find(p => p.name.includes('Nhất')) || { count: 0 };
@@ -582,6 +601,42 @@ app.get('/api/export', async (req, res) => {
                     g1.count,
                     g2.count,
                     g3.count
+                ];
+            } else if (game === '535') {
+                const jackpot = draw.prizes.find(p => p.name.includes('Độc Đắc')) || { value: 0, count: 0 };
+                const g1 = draw.prizes.find(p => p.name.includes('Nhất')) || { count: 0 };
+                const g2 = draw.prizes.find(p => p.name.includes('Nhì')) || { count: 0 };
+                const g3 = draw.prizes.find(p => p.name.includes('Ba')) || { count: 0 };
+                const g4 = draw.prizes.find(p => p.name.includes('Tư')) || { count: 0 };
+                const g5 = draw.prizes.find(p => p.name.includes('Năm')) || { count: 0 };
+                const g6 = draw.prizes.find(p => p.name.includes('Khuyến Khích')) || { count: 0 };
+
+                rowData = [
+                    `#${draw.drawIdStr}`,
+                    draw.dateStr,
+                    getValWithAbs(0),
+                    getValWithAbs(1),
+                    getValWithAbs(2),
+                    getValWithAbs(3),
+                    getValWithAbs(4),
+                    getValWithAbs(5), // Special ball
+                    numDeltas[0],
+                    numDeltas[1],
+                    numDeltas[2],
+                    numDeltas[3],
+                    numDeltas[4],
+                    numDeltas[5], // Special ball delta
+                    currentSum,
+                    sumDiff,
+                    drawAbs.totalAbsence,
+                    jackpot.value,
+                    jackpot.count,
+                    g1.count,
+                    g2.count,
+                    g3.count,
+                    g4.count,
+                    g5.count,
+                    g6.count
                 ];
             }
 
@@ -620,7 +675,7 @@ app.get('/api/export', async (req, res) => {
                             cell.numFmt = '#,##0';
                         }
                     }
-                } else {
+                } else if (game === '655') {
                     if (colIdx === 0 || colIdx === 1) {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
                     } else if (colIdx >= 2 && colIdx <= 8) {
@@ -635,6 +690,31 @@ app.get('/api/export', async (req, res) => {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
                         cell.numFmt = '+0;-0;0';
                     } else if (colIdx === 18) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        if (typeof val === 'number') {
+                            cell.numFmt = '#,##0';
+                        }
+                    } else {
+                        cell.alignment = { vertical: 'middle', horizontal: 'right' };
+                        if (typeof val === 'number') {
+                            cell.numFmt = '#,##0';
+                        }
+                    }
+                } else if (game === '535') {
+                    if (colIdx === 0 || colIdx === 1) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                    } else if (colIdx >= 2 && colIdx <= 7) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                    } else if (colIdx >= 8 && colIdx <= 13) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        cell.numFmt = '+0;-0;0';
+                    } else if (colIdx === 14) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        cell.numFmt = '#,##0';
+                    } else if (colIdx === 15) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        cell.numFmt = '+0;-0;0';
+                    } else if (colIdx === 16) {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
                         if (typeof val === 'number') {
                             cell.numFmt = '#,##0';
@@ -670,7 +750,7 @@ app.get('/api/export', async (req, res) => {
         );
         const filename = game === '645'
             ? `Vietlott_Mega645_Ky_${startId}_den_${endId}.xlsx`
-            : `Vietlott_Power655_Ky_${startId}_den_${endId}.xlsx`;
+            : (game === '655' ? `Vietlott_Power655_Ky_${startId}_den_${endId}.xlsx` : `Vietlott_Lotto535_Ky_${startId}_den_${endId}.xlsx`);
             
         res.setHeader(
             'Content-Disposition',
@@ -689,7 +769,7 @@ app.get('/api/export', async (req, res) => {
 async function autoUpdateCache() {
     try {
         console.log('[auto-crawl] Bắt đầu tự động kiểm tra kỳ quay mới trên Vietlott...');
-        for (const game of ['645', '655']) {
+        for (const game of ['645', '655', '535']) {
             const latestInfo = await fetchLatestDrawInfo(game);
             const latestId = latestInfo.drawId;
             

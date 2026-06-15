@@ -239,7 +239,7 @@ function App() {
   const getAbsenceStatistics = () => {
     if (visibleResults.length === 0) return [];
     
-    const maxNum = game === '645' ? 45 : 55;
+    const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
     // Sắp xếp kỳ quay giảm dần để duyệt từ mới nhất về cũ nhất
     const reversedResults = [...visibleResults].sort((a, b) => b.drawId - a.drawId);
     
@@ -332,12 +332,16 @@ function App() {
       if (game === '645') {
         curSorted = [...currentNums].sort((a, b) => a - b);
         prevSorted = [...prevNums].sort((a, b) => a - b);
-      } else {
-        // Tách 6 số chính và 1 số đặc biệt đối với Power 6/55
+      } else if (game === '655') {
         const curMain = currentNums.slice(0, 6).sort((a, b) => a - b);
         const prevMain = prevNums.slice(0, 6).sort((a, b) => a - b);
         curSorted = [...curMain, currentNums[6]];
         prevSorted = [...prevMain, prevNums[6]];
+      } else if (game === '535') {
+        const curMain = currentNums.slice(0, 5).sort((a, b) => a - b);
+        const prevMain = prevNums.slice(0, 5).sort((a, b) => a - b);
+        curSorted = [...curMain, currentNums[5]];
+        prevSorted = [...prevMain, prevNums[5]];
       }
 
       numDeltas = curSorted.map((num, idx) => {
@@ -441,7 +445,7 @@ function App() {
           value: 30000
         }
       ];
-    } else {
+    } else if (mgmtGame === '655') {
       prizes = [
         {
           name: 'Jackpot 1',
@@ -477,6 +481,58 @@ function App() {
           count: parseInt(mgmtG3Count, 10) || 0,
           valueStr: '50.000',
           value: 50000
+        }
+      ];
+    } else if (mgmtGame === '535') {
+      prizes = [
+        {
+          name: 'Giải Độc Đắc',
+          matching: 'O O O O O + O',
+          count: parseInt(mgmtJackpotCount, 10) || 0,
+          valueStr: (parseInt(mgmtJackpotValue, 10) || 0).toLocaleString('vi-VN'),
+          value: parseInt(mgmtJackpotValue, 10) || 0
+        },
+        {
+          name: 'Giải Nhất',
+          matching: 'O O O O O',
+          count: parseInt(mgmtG1Count, 10) || 0,
+          valueStr: '10.000.000',
+          value: 10000000
+        },
+        {
+          name: 'Giải Nhì',
+          matching: 'O O O O + O',
+          count: parseInt(mgmtG2Count, 10) || 0,
+          valueStr: '5.000.000',
+          value: 5000000
+        },
+        {
+          name: 'Giải Ba',
+          matching: 'O O O O',
+          count: parseInt(mgmtG3Count, 10) || 0,
+          valueStr: '500.000',
+          value: 500000
+        },
+        {
+          name: 'Giải Tư',
+          matching: 'O O O + O',
+          count: 0,
+          valueStr: '100.000',
+          value: 100000
+        },
+        {
+          name: 'Giải Năm',
+          matching: 'O O O',
+          count: 0,
+          valueStr: '30.000',
+          value: 30000
+        },
+        {
+          name: 'Giải Khuyến Khích',
+          matching: 'OO + OO + OO',
+          count: 0,
+          valueStr: '10.000',
+          value: 10000
         }
       ];
     }
@@ -540,7 +596,7 @@ function App() {
         </div>
         {latestInfo && (
           <div className="glass-panel" style={{ padding: '10px 18px', fontSize: '0.85rem' }}>
-            <span style={{ color: 'var(--text-muted)' }}>Mới nhất ({game === '645' ? 'Mega' : 'Power'}): </span>
+            <span style={{ color: 'var(--text-muted)' }}>Mới nhất ({game === '645' ? 'Mega' : (game === '655' ? 'Power' : 'Lotto 5/35')}): </span>
             <strong style={{ color: 'var(--accent)' }}>Kỳ #{latestInfo.drawId}</strong> ({latestInfo.dateStr})
           </div>
         )}
@@ -569,6 +625,7 @@ function App() {
             >
               <option value="645">Mega 6/45 (Thứ 4, 6, Chủ nhật)</option>
               <option value="655">Power 6/55 (Thứ 3, 5, 7)</option>
+              <option value="535">Lotto 5/35 (Hàng ngày lúc 13h & 21h)</option>
             </select>
           </div>
 
@@ -712,6 +769,7 @@ function App() {
               >
                 <option value="645">Mega 6/45</option>
                 <option value="655">Power 6/55</option>
+                <option value="535">Lotto 5/35</option>
               </select>
             </div>
 
@@ -764,35 +822,38 @@ function App() {
                 </div>
 
                 <div className="form-group">
-                  <label>Bộ Số Trúng Thưởng ({mgmtGame === '645' ? '6 số' : '6 số chính + 1 số ĐB'})</label>
+                  <label>Bộ Số Trúng Thưởng ({mgmtGame === '645' ? '6 số' : (mgmtGame === '655' ? '6 số chính + 1 số ĐB' : '5 số chính + 1 số ĐB')})</label>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
-                    {Array.from({ length: mgmtGame === '645' ? 6 : 7 }).map((_, idx) => (
-                      <input
-                        key={idx}
-                        type="text"
-                        maxLength="2"
-                        className="input-field"
-                        style={{
-                          width: '38px',
-                          height: '38px',
-                          textAlign: 'center',
-                          padding: '0',
-                          fontSize: '0.9rem',
-                          borderRadius: '8px',
-                          border: idx === 6 ? '1px solid var(--warning)' : '1px solid var(--border-color)',
-                          background: idx === 6 ? 'rgba(255, 183, 3, 0.05)' : 'rgba(255,255,255,0.02)'
-                        }}
-                        placeholder={idx === 6 ? 'ĐB' : String(idx + 1)}
-                        value={mgmtNumbers[idx] || ''}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '');
-                          const newNums = [...mgmtNumbers];
-                          newNums[idx] = val;
-                          setMgmtNumbers(newNums);
-                        }}
-                        disabled={isSubmittingMgmt}
-                      />
-                    ))}
+                    {Array.from({ length: mgmtGame === '645' ? 6 : (mgmtGame === '655' ? 7 : 6) }).map((_, idx) => {
+                      const isBonus = (mgmtGame === '655' && idx === 6) || (mgmtGame === '535' && idx === 5);
+                      return (
+                        <input
+                          key={idx}
+                          type="text"
+                          maxLength="2"
+                          className="input-field"
+                          style={{
+                            width: '38px',
+                            height: '38px',
+                            textAlign: 'center',
+                            padding: '0',
+                            fontSize: '0.9rem',
+                            borderRadius: '8px',
+                            border: isBonus ? '1px solid var(--warning)' : '1px solid var(--border-color)',
+                            background: isBonus ? 'rgba(255, 183, 3, 0.05)' : 'rgba(255,255,255,0.02)'
+                          }}
+                          placeholder={isBonus ? 'ĐB' : String(idx + 1)}
+                          value={mgmtNumbers[idx] || ''}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            const newNums = [...mgmtNumbers];
+                            newNums[idx] = val;
+                            setMgmtNumbers(newNums);
+                          }}
+                          disabled={isSubmittingMgmt}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1081,7 +1142,7 @@ function App() {
                           <th style={{ textAlign: 'right' }}>Giá trị Jackpot</th>
                           <th style={{ textAlign: 'right' }}>Số người trúng</th>
                         </tr>
-                      ) : (
+                      ) : game === '655' ? (
                         <tr>
                           <th>Kỳ Quay</th>
                           <th>Ngày Quay</th>
@@ -1090,6 +1151,16 @@ function App() {
                           <th style={{ textAlign: 'center', width: '110px' }}>Tổng Vắng</th>
                           <th style={{ textAlign: 'right' }}>Jackpot 1</th>
                           <th style={{ textAlign: 'right' }}>Jackpot 2</th>
+                        </tr>
+                      ) : (
+                        <tr>
+                          <th>Kỳ Quay</th>
+                          <th>Ngày Quay</th>
+                          <th>Bộ Số Trúng Thưởng (1-5 | Bonus)</th>
+                          <th style={{ textAlign: 'center', width: '110px' }}>Tổng (Lệch)</th>
+                          <th style={{ textAlign: 'center', width: '110px' }}>Tổng Vắng</th>
+                          <th style={{ textAlign: 'right' }}>Giá trị Jackpot</th>
+                          <th style={{ textAlign: 'right' }}>Số người trúng</th>
                         </tr>
                       )}
                     </thead>
@@ -1145,7 +1216,7 @@ function App() {
                               <td style={{ textAlign: 'right' }}>{jackpot.count}</td>
                             </tr>
                           );
-                        } else {
+                        } else if (game === '655') {
                           const jp1 = draw.prizes.find(p => p.name.includes('Jackpot 1')) || { valueStr: '0', count: 0 };
                           const jp2 = draw.prizes.find(p => p.name.includes('Jackpot 2')) || { valueStr: '0', count: 0 };
                           return (
@@ -1208,6 +1279,71 @@ function App() {
                               </td>
                               <td style={{ textAlign: 'right', fontWeight: '600' }}>{jp1.valueStr} đ ({jp1.count})</td>
                               <td style={{ textAlign: 'right', fontWeight: '600', color: 'var(--warning)' }}>{jp2.valueStr} đ ({jp2.count})</td>
+                            </tr>
+                          );
+                        } else {
+                          // game === '535'
+                          const jackpot = draw.prizes.find(p => p.name.includes('Độc Đắc')) || { valueStr: '0', count: 0 };
+                          return (
+                            <tr key={draw.drawId}>
+                              <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>#{draw.drawIdStr}</td>
+                              <td>{draw.dateStr}</td>
+                              <td>
+                                <div className="balls-container">
+                                  {draw.numbers.slice(0, 5).map((n, i) => (
+                                    <div key={i} className="ball-wrapper">
+                                      <span className="ball">{n}</span>
+                                      <span className="ball-absence">
+                                        {draw.individualAbsences ? draw.individualAbsences[i] : 'N/A'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  <span style={{ color: 'var(--border-color)', alignSelf: 'flex-start', marginTop: '4px', fontSize: '1.2rem' }}>|</span>
+                                  <div className="ball-wrapper">
+                                    <span className="ball power-bonus">{draw.numbers[5]}</span>
+                                    <span className="ball-absence" style={{ color: 'var(--warning)' }}>
+                                      {draw.individualAbsences ? draw.individualAbsences[5] : 'N/A'}
+                                    </span>
+                                  </div>
+                                </div>
+                                {numDeltas.length > 0 && (
+                                  <div className="deltas-container" style={{ display: 'flex', gap: '8px', marginTop: '4px', paddingLeft: '2px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                                    {numDeltas.slice(0, 5).map((diff, i) => {
+                                      const color = diff > 0 ? '#2a9d8f' : diff < 0 ? '#e63946' : 'var(--text-muted, #8d99ae)';
+                                      const sign = diff > 0 ? `+${diff}` : diff;
+                                      return (
+                                        <span key={i} style={{ width: '28px', textAlign: 'center', color: color }}>
+                                          {sign}
+                                        </span>
+                                      );
+                                    })}
+                                    <span style={{ width: '8px' }}></span>
+                                    <span style={{ 
+                                      width: '28px', 
+                                      textAlign: 'center', 
+                                      color: numDeltas[5] > 0 ? '#2a9d8f' : numDeltas[5] < 0 ? '#e63946' : 'var(--text-muted, #8d99ae)' 
+                                    }}>
+                                      {numDeltas[5] > 0 ? `+${numDeltas[5]}` : numDeltas[5]}
+                                    </span>
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{ textAlign: 'center', fontWeight: 'bold' }}>
+                                <div style={{ color: 'var(--text-main)' }}>{currentSum}</div>
+                                {sumDiff !== null && (
+                                  <div style={{ 
+                                    fontSize: '0.75rem', 
+                                    color: sumDiff > 0 ? '#2ec4b6' : sumDiff < 0 ? '#e63946' : 'var(--text-muted)' 
+                                  }}>
+                                    {sumDiff > 0 ? `+${sumDiff}` : sumDiff}
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{ textAlign: 'center', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                                {draw.totalAbsence !== undefined ? draw.totalAbsence : '-'}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: '600' }}>{jackpot.valueStr} đ</td>
+                              <td style={{ textAlign: 'right' }}>{jackpot.count}</td>
                             </tr>
                           );
                         }
@@ -1284,7 +1420,7 @@ function App() {
                           </div>
                         </div>
                       );
-                    } else {
+                    } else if (game === '655') {
                       const jp1 = draw.prizes.find(p => p.name.includes('Jackpot 1')) || { valueStr: '0', count: 0 };
                       const jp2 = draw.prizes.find(p => p.name.includes('Jackpot 2')) || { valueStr: '0', count: 0 };
                       return (
@@ -1361,6 +1497,84 @@ function App() {
                                 <span style={{ fontWeight: '600', fontSize: '0.85rem' }}>JP1: {jp1.valueStr} đ ({jp1.count})</span>
                                 <span style={{ color: 'var(--warning)', fontWeight: '600', fontSize: '0.85rem' }}>JP2: {jp2.valueStr} đ ({jp2.count})</span>
                               </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      // game === '535'
+                      const jackpot = draw.prizes.find(p => p.name.includes('Độc Đắc')) || { valueStr: '0', count: 0 };
+                      return (
+                        <div key={draw.drawId} className="mobile-draw-card glass-panel">
+                          <div className="card-header">
+                            <span className="draw-id">#{draw.drawIdStr}</span>
+                            <span className="draw-date">{draw.dateStr}</span>
+                          </div>
+                          
+                          <div className="card-body">
+                            <div className="balls-container">
+                              {draw.numbers.slice(0, 5).map((n, i) => (
+                                <div key={i} className="ball-wrapper">
+                                  <span className="ball">{n}</span>
+                                  <span className="ball-absence">
+                                    {draw.individualAbsences ? draw.individualAbsences[i] : 'N/A'}
+                                  </span>
+                                </div>
+                              ))}
+                              <span style={{ color: 'var(--border-color)', alignSelf: 'flex-start', marginTop: '4px', fontSize: '1.2rem' }}>|</span>
+                              <div className="ball-wrapper">
+                                <span className="ball power-bonus">{draw.numbers[5]}</span>
+                                <span className="ball-absence" style={{ color: 'var(--warning)' }}>
+                                  {draw.individualAbsences ? draw.individualAbsences[5] : 'N/A'}
+                                </span>
+                              </div>
+                            </div>
+                            {numDeltas.length > 0 && (
+                              <div className="deltas-container">
+                                {numDeltas.slice(0, 5).map((diff, i) => {
+                                  const color = diff > 0 ? '#2a9d8f' : diff < 0 ? '#e63946' : 'var(--text-muted, #8d99ae)';
+                                  const sign = diff > 0 ? `+${diff}` : diff;
+                                  return (
+                                    <span key={i} style={{ color: color }}>
+                                      {sign}
+                                    </span>
+                                  );
+                                })}
+                                <span style={{ width: '8px' }}></span>
+                                <span style={{ 
+                                  color: numDeltas[5] > 0 ? '#2a9d8f' : numDeltas[5] < 0 ? '#e63946' : 'var(--text-muted, #8d99ae)' 
+                                }}>
+                                  {numDeltas[5] > 0 ? `+${numDeltas[5]}` : numDeltas[5]}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="card-footer-grid">
+                            <div className="footer-item">
+                              <span className="item-label">Tổng (Lệch)</span>
+                              <span className="item-value">
+                                {currentSum} 
+                                {sumDiff !== null && (
+                                  <span style={{ 
+                                    marginLeft: '4px',
+                                    fontSize: '0.75rem', 
+                                    color: sumDiff > 0 ? '#2ec4b6' : sumDiff < 0 ? '#e63946' : 'var(--text-muted)' 
+                                  }}>
+                                    ({sumDiff > 0 ? `+${sumDiff}` : sumDiff})
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                            
+                            <div className="footer-item">
+                              <span className="item-label">Tổng Vắng</span>
+                              <span className="item-value highlight">{draw.totalAbsence !== undefined ? draw.totalAbsence : '-'}</span>
+                            </div>
+                            
+                            <div className="footer-item" style={{ gridColumn: 'span 2' }}>
+                              <span className="item-label">Jackpot (Độc Đắc)</span>
+                              <span className="item-value">{jackpot.valueStr} đ ({jackpot.count} người trúng)</span>
                             </div>
                           </div>
                         </div>
