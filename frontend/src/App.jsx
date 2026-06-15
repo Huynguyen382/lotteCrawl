@@ -28,6 +28,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statsSearchQuery, setStatsSearchQuery] = useState('');
   const [statsViewMode, setStatsViewMode] = useState('table'); // 'table' or 'chart'
+  const [statsType, setStatsType] = useState('main'); // 'main' or 'special'
   const [activeTab, setActiveTab] = useState('preview');
   const [sortBy, setSortBy] = useState('number');
 
@@ -60,6 +61,7 @@ function App() {
   // Load latest draw info on game change
   useEffect(() => {
     fetchLatestInfo();
+    setStatsType('main');
   }, [game]);
 
   const fetchLatestInfo = async () => {
@@ -235,11 +237,12 @@ function App() {
     return true;
   });
 
-  // Tính toán số kỳ vắng mặt của các số từ 1-45 (Mega) hoặc 1-55 (Power)
+  // Tính toán số kỳ vắng mặt của các số từ 1-45 (Mega) hoặc 1-55 (Power) hoặc 1-35 (Lotto)
   const getAbsenceStatistics = () => {
     if (visibleResults.length === 0) return [];
     
     const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
+    const mainLength = game === '535' ? 5 : 6;
     // Sắp xếp kỳ quay giảm dần để duyệt từ mới nhất về cũ nhất
     const reversedResults = [...visibleResults].sort((a, b) => b.drawId - a.drawId);
     
@@ -249,7 +252,47 @@ function App() {
       const numStr = String(i).padStart(2, '0');
       
       const firstSeenIndex = reversedResults.findIndex(draw => {
-        return draw.numbers.some(num => parseInt(num, 10) === i);
+        const mainNumbers = draw.numbers.slice(0, mainLength);
+        return mainNumbers.some(num => parseInt(num, 10) === i);
+      });
+      
+      if (firstSeenIndex !== -1) {
+        stats.push({
+          number: numStr,
+          absentDraws: firstSeenIndex,
+          lastSeenDrawId: reversedResults[firstSeenIndex].drawIdStr,
+          lastSeenDate: reversedResults[firstSeenIndex].dateStr
+        });
+      } else {
+        stats.push({
+          number: numStr,
+          absentDraws: visibleResults.length, // Chưa xuất hiện trong dải dữ liệu đã cào
+          lastSeenDrawId: 'N/A',
+          lastSeenDate: 'Chưa về'
+        });
+      }
+    }
+    
+    return stats;
+  };
+
+  // Tính toán số kỳ vắng mặt của số Đặc Biệt (chỉ cho Power 6/55 và Lotto 5/35)
+  const getSpecialAbsenceStatistics = () => {
+    if (visibleResults.length === 0 || game === '645') return [];
+    
+    const maxNum = game === '655' ? 55 : 12;
+    const specialIdx = game === '655' ? 6 : 5;
+    // Sắp xếp kỳ quay giảm dần để duyệt từ mới nhất về cũ nhất
+    const reversedResults = [...visibleResults].sort((a, b) => b.drawId - a.drawId);
+    
+    const stats = [];
+    
+    for (let i = 1; i <= maxNum; i++) {
+      const numStr = String(i).padStart(2, '0');
+      
+      const firstSeenIndex = reversedResults.findIndex(draw => {
+        if (!draw.numbers || draw.numbers.length <= specialIdx) return false;
+        return parseInt(draw.numbers[specialIdx], 10) === i;
       });
       
       if (firstSeenIndex !== -1) {
@@ -274,7 +317,7 @@ function App() {
 
   // Sắp xếp kết quả thống kê vắng mặt
   const getSortedStats = () => {
-    const stats = getAbsenceStatistics();
+    const stats = statsType === 'special' ? getSpecialAbsenceStatistics() : getAbsenceStatistics();
     if (sortBy === 'number') {
       return stats.sort((a, b) => parseInt(a.number, 10) - parseInt(b.number, 10));
     } else if (sortBy === 'absent-desc') {
@@ -1680,6 +1723,46 @@ function App() {
                       </button>
                     </div>
 
+                    {/* Stats Type Toggle (Only for games with special numbers: Power 6/55 and Lotto 5/35) */}
+                    {game !== '645' && (
+                      <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px', border: '1px solid var(--border-color)' }}>
+                        <button
+                          className={`toggle-btn ${statsType === 'main' ? 'active' : ''}`}
+                          onClick={() => setStatsType('main')}
+                          style={{
+                            background: statsType === 'main' ? 'var(--primary)' : 'none',
+                            border: 'none',
+                            color: '#fff',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            fontWeight: '600',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          Số chính
+                        </button>
+                        <button
+                          className={`toggle-btn ${statsType === 'special' ? 'active' : ''}`}
+                          onClick={() => setStatsType('special')}
+                          style={{
+                            background: statsType === 'special' ? 'var(--warning)' : 'none',
+                            border: 'none',
+                            color: '#fff',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            fontWeight: '600',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          Số ĐB
+                        </button>
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                       <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Sắp xếp:</span>
                       <select
@@ -1725,7 +1808,7 @@ function App() {
                           return (
                             <tr key={item.number}>
                               <td style={{ textAlign: 'center' }}>
-                                <span className="ball" style={{ margin: '0 auto' }}>{item.number}</span>
+                                <span className={`ball ${statsType === 'special' ? 'power-bonus' : ''}`} style={{ margin: '0 auto' }}>{item.number}</span>
                               </td>
                               <td style={{ textAlign: 'center', fontWeight: 'bold', color: alertColor }}>
                                 <span style={{ 
@@ -1778,7 +1861,13 @@ function App() {
 
                       return (
                         <div key={item.number} style={{ display: 'flex', alignItems: 'center', gap: '16px' }} title={`Số ${item.number} vắng mặt ${item.absentDraws} kỳ. Lần cuối về ở Kỳ #${item.lastSeenDrawId} ngày ${item.lastSeenDate}.`}>
-                          <span className="ball" style={{ width: '32px', height: '32px', fontSize: '0.85rem', flexShrink: 0, background: item.absentDraws === 0 ? 'radial-gradient(circle at 30% 30%, #2a9d8f, #1a6d61)' : undefined }}>
+                          <span className={`ball ${statsType === 'special' ? 'power-bonus' : ''}`} style={{ 
+                            width: '32px', 
+                            height: '32px', 
+                            fontSize: '0.85rem', 
+                            flexShrink: 0, 
+                            background: item.absentDraws === 0 ? 'radial-gradient(circle at 30% 30%, #2a9d8f, #1a6d61)' : undefined 
+                          }}>
                             {item.number}
                           </span>
                           
