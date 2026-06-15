@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require('./src/config/db');
 const fs = require('fs');
 const path = require('path');
 
@@ -21,7 +21,7 @@ async function sync() {
     const cacheData = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
     console.log('📦 Bắt đầu đồng bộ dữ liệu lịch sử từ cache.json vào PostgreSQL...');
 
-    for (const game of ['645', '655']) {
+    for (const game of ['645', '655', '535']) {
         const draws = cacheData[game] || {};
         const drawIds = Object.keys(draws).map(id => parseInt(id, 10)).sort((a, b) => a - b);
         console.log(`\n🔄 Đang đồng bộ game ${game} (${drawIds.length} kỳ quay)...`);
