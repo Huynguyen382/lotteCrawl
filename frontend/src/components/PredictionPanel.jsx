@@ -1,0 +1,407 @@
+import React, { useState, useEffect } from 'react';
+
+function PredictionPanel({ game, visibleResults }) {
+  const [ticketCount, setTicketCount] = useState(3);
+  const [strategy, setStrategy] = useState('balanced'); // 'balanced', 'hot', 'cold', 'random'
+  const [generatedTickets, setGeneratedTickets] = useState([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiReport, setAiReport] = useState(null);
+
+  const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
+  const mainLength = game === '535' ? 5 : 6;
+
+  // Compute Hot and Cold numbers from visible results
+  const getFrequencyStats = () => {
+    if (visibleResults.length === 0) return { hot: [], cold: [] };
+
+    const counts = {};
+    for (let i = 1; i <= maxNum; i++) counts[i] = 0;
+
+    // Count frequency in main numbers of visible results
+    visibleResults.forEach(draw => {
+      const mainNums = draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10));
+      mainNums.forEach(num => {
+        if (counts[num] !== undefined) counts[num]++;
+      });
+    });
+
+    const frequencyList = Object.keys(counts).map(num => ({
+      number: String(num).padStart(2, '0'),
+      count: counts[num]
+    }));
+
+    // Sort by count descending for hot, ascending for cold
+    const hotSorted = [...frequencyList].sort((a, b) => b.count - a.count);
+    
+    // For cold numbers, we check skip/absence interval (skip counts)
+    const reversedResults = [...visibleResults].sort((a, b) => b.drawId - a.drawId);
+    const absences = [];
+    for (let i = 1; i <= maxNum; i++) {
+      const idx = reversedResults.findIndex(draw => {
+        const mainNums = draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10));
+        return mainNums.includes(i);
+      });
+      absences.push({
+        number: String(i).padStart(2, '0'),
+        absentDraws: idx !== -1 ? idx : visibleResults.length
+      });
+    }
+    const coldSorted = [...absences].sort((a, b) => b.absentDraws - a.absentDraws);
+
+    return {
+      hot: hotSorted.slice(0, 12).map(item => item.number),
+      cold: coldSorted.slice(0, 12).map(item => item.number)
+    };
+  };
+
+  const { hot, cold } = getFrequencyStats();
+
+  // Generate AI Analysis Report on game or results change
+  useEffect(() => {
+    if (visibleResults.length === 0) {
+      setAiReport(null);
+      return;
+    }
+
+    const { hot: hotNums, cold: coldNums } = getFrequencyStats();
+    
+    // Calculations for simulated AI comments
+    const last10 = [...visibleResults].sort((a, b) => b.drawId - a.drawId).slice(0, 10);
+    const sums = last10.map(draw => {
+      const nums = draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10));
+      return nums.reduce((s, n) => s + n, 0);
+    });
+    const avgSum = Math.round(sums.reduce((s, n) => s + n, 0) / Math.max(1, sums.length));
+
+    // Calculate Odd/Even ratio in last 10 draws
+    let oddCount = 0;
+    let totalCount = 0;
+    last10.forEach(draw => {
+      const nums = draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10));
+      nums.forEach(n => {
+        if (n % 2 !== 0) oddCount++;
+        totalCount++;
+      });
+    });
+    const oddPercent = Math.round((oddCount / Math.max(1, totalCount)) * 100);
+
+    setAiReport({
+      avgSum,
+      oddPercent,
+      topHot: hotNums.slice(0, 5),
+      topCold: coldNums.slice(0, 5)
+    });
+    setGeneratedTickets([]);
+  }, [game, visibleResults]);
+
+  // Handle generation of smart tickets
+  const handleGenerate = () => {
+    if (visibleResults.length === 0) return;
+    setIsGenerating(true);
+    
+    setTimeout(() => {
+      const tickets = [];
+      const { hot: hotList, cold: coldList } = getFrequencyStats();
+
+      // Setup parameters based on game type
+      const midPoint = Math.floor(maxNum / 2);
+      let minSum = 115, maxSum = 165; // Mega 6/45 default
+      if (game === '655') {
+        minSum = 135;
+        maxSum = 200;
+      } else if (game === '535') {
+        minSum = 65;
+        maxSum = 115;
+      }
+
+      for (let t = 0; t < ticketCount; t++) {
+        let ticketNums = [];
+        let attempts = 0;
+
+        while (ticketNums.length < mainLength && attempts < 500) {
+          attempts++;
+          let pool = [];
+
+          if (strategy === 'balanced') {
+            // Pick from all numbers, but we will filter the output combination
+            pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0'));
+          } else if (strategy === 'hot') {
+            // 60% probability from Hot numbers, 40% from rest
+            if (Math.random() < 0.6) {
+              pool = hotList;
+            } else {
+              pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0')).filter(n => !hotList.includes(n));
+            }
+          } else if (strategy === 'cold') {
+            // 60% probability from Cold numbers, 40% from rest
+            if (Math.random() < 0.6) {
+              pool = coldList;
+            } else {
+              pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0')).filter(n => !coldList.includes(n));
+            }
+          } else {
+            // Random
+            pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0'));
+          }
+
+          // Pick a random number from pool
+          const randomNum = pool[Math.floor(Math.random() * pool.length)];
+          if (randomNum && !ticketNums.includes(randomNum)) {
+            ticketNums.push(randomNum);
+          }
+
+          // If we have enough numbers, check combination filters for "balanced" strategy
+          if (ticketNums.length === mainLength) {
+            const numVals = ticketNums.map(n => parseInt(n, 10));
+            const sum = numVals.reduce((s, n) => s + n, 0);
+
+            // Filter by sum
+            if (sum < minSum || sum > maxSum) {
+              ticketNums = []; // Reset and retry
+              continue;
+            }
+
+            // Filter by Odd/Even (should be balanced: e.g. 3-3, 2-4, 4-2 for 6 balls; 2-3, 3-2 for 5 balls)
+            const odds = numVals.filter(n => n % 2 !== 0).length;
+            if (mainLength === 6 && (odds < 2 || odds > 4)) {
+              ticketNums = [];
+              continue;
+            }
+            if (mainLength === 5 && (odds < 2 || odds > 3)) {
+              ticketNums = [];
+              continue;
+            }
+
+            // Filter by High/Low (Small/Large)
+            const highs = numVals.filter(n => n > midPoint).length;
+            if (mainLength === 6 && (highs < 2 || highs > 4)) {
+              ticketNums = [];
+              continue;
+            }
+            if (mainLength === 5 && (highs < 2 || highs > 3)) {
+              ticketNums = [];
+              continue;
+            }
+          }
+        }
+
+        // If attempts exceeded and we couldn't satisfy filters, just sort whatever we got or do pure random fallback
+        if (ticketNums.length < mainLength) {
+          ticketNums = [];
+          while (ticketNums.length < mainLength) {
+            const r = String(Math.floor(Math.random() * maxNum) + 1).padStart(2, '0');
+            if (!ticketNums.includes(r)) ticketNums.push(r);
+          }
+        }
+
+        ticketNums.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+
+        // For Lotto 5/35 and Power 6/55, also generate 1 Special Number
+        let specialNum = null;
+        if (game === '655') {
+          // Special ball between 1 and 55, not in the main numbers
+          let r = Math.floor(Math.random() * 55) + 1;
+          while (ticketNums.includes(String(r).padStart(2, '0'))) {
+            r = Math.floor(Math.random() * 55) + 1;
+          }
+          specialNum = String(r).padStart(2, '0');
+        } else if (game === '535') {
+          // Special ball between 1 and 12
+          specialNum = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
+        }
+
+        tickets.push({
+          numbers: ticketNums,
+          special: specialNum
+        });
+      }
+
+      setGeneratedTickets(tickets);
+      setIsGenerating(false);
+    }, 1200);
+  };
+
+  if (visibleResults.length === 0) {
+    return (
+      <div className="empty-state">
+        <svg className="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+        </svg>
+        <h3>Chưa có dữ liệu phân tích</h3>
+        <p>Vui lòng cào dữ liệu trước để AI có cơ sở phân tích tần suất và gợi ý bộ số.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stats-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      
+      {/* AI Analysis Summary Card */}
+      {aiReport && (
+        <div className="glass-panel" style={{ 
+          background: 'linear-gradient(135deg, rgba(108, 92, 231, 0.1) 0%, rgba(230, 57, 70, 0.05) 100%)',
+          border: '1px solid rgba(108, 92, 231, 0.25)',
+          padding: '20px',
+          borderRadius: '16px',
+          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.2)'
+        }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent)', margin: '0 0 12px 0', fontSize: '1.1rem' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V15H13V17ZM13 13H11V7H13V13Z" fill="currentColor"/>
+            </svg>
+            Báo cáo phân tích kỹ thuật AI (Simulated AI)
+          </h3>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', fontSize: '0.85rem', lineHeight: '1.5' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Tổng trung bình (10 kỳ gần đây):</span>
+              <strong style={{ fontSize: '1.2rem', color: '#fff' }}>{aiReport.avgSum}</strong>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-dimmed, #8d99ae)' }}>
+                {game === '645' ? 'Vùng tối ưu: 115 - 165' : (game === '655' ? 'Vùng tối ưu: 135 - 200' : 'Vùng tối ưu: 65 - 115')}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Tỷ lệ số Lẻ xuất hiện:</span>
+              <strong style={{ fontSize: '1.2rem', color: '#f4a261' }}>{aiReport.oddPercent}%</strong>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-dimmed, #8d99ae)' }}>Lý tưởng: 40% - 60% (Cân bằng)</span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>AI nhận diện Lô Gan lâu chưa về:</span>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
+                {aiReport.topCold.map(n => (
+                  <span key={n} style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>{n}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ 
+            marginTop: '16px', 
+            padding: '12px', 
+            background: 'rgba(0,0,0,0.2)', 
+            borderLeft: '4px solid var(--accent)', 
+            borderRadius: '0 8px 8px 0',
+            fontSize: '0.8rem',
+            color: 'var(--text-muted)',
+            lineHeight: '1.4'
+          }}>
+            <strong>💡 Khuyến nghị chiến thuật AI:</strong> Kỳ tiếp theo dự kiến có xu hướng hội tụ tổng về vùng cân bằng. 
+            Để tăng hiệu quả và cơ hội trúng giải phụ, AI khuyên bạn nên sử dụng chiến thuật <strong>Cân bằng AI</strong> (Lớn/Nhỏ và Chẵn/Lẻ đều nhau) 
+            và lồng ghép ít nhất 1 số lạnh (lô gan vắng mặt hơn 15 kỳ) vào tổ hợp.
+            <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.25)', marginTop: '6px', fontStyle: 'italic' }}>
+              ⚠️ Tuyên bố miễn trừ trách nhiệm: Xổ số là hoàn toàn ngẫu nhiên. Các phân tích và gợi ý của AI chỉ mang tính chất thống kê, tối ưu hóa phân phối toán học và giải trí, không đảm bảo trúng thưởng 100%.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generator Control Card */}
+      <div className="glass-panel" style={{ padding: '20px' }}>
+        <h3 style={{ margin: '0 0 16px 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          Bộ lọc & Gợi ý vé số thông minh
+        </h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label>Số lượng vé gợi ý</label>
+            <select 
+              className="select-field"
+              value={ticketCount}
+              onChange={(e) => setTicketCount(parseInt(e.target.value, 10))}
+            >
+              <option value="1">1 vé</option>
+              <option value="3">3 vé</option>
+              <option value="5">5 vé</option>
+            </select>
+          </div>
+
+          <div className="form-group" style={{ margin: 0 }}>
+            <label>Chiến thuật AI gợi ý</label>
+            <select 
+              className="select-field"
+              value={strategy}
+              onChange={(e) => setStrategy(e.target.value)}
+            >
+              <option value="balanced">Cân bằng AI (Chẵn/Lẻ, Lớn/Nhỏ)</option>
+              <option value="hot">Ưu tiên Số Nóng (Tần suất về cao)</option>
+              <option value="cold">Nuôi Lô Gan (Số lâu chưa về)</option>
+              <option value="random">Ngẫu nhiên thuần túy</option>
+            </select>
+          </div>
+        </div>
+
+        <button 
+          onClick={handleGenerate}
+          disabled={isGenerating}
+          className={`btn btn-primary ${isGenerating ? 'btn-disabled' : ''}`}
+          style={{ width: '100%', background: 'linear-gradient(90deg, var(--accent) 0%, #6c5ce7 100%)', border: 'none' }}
+        >
+          {isGenerating ? (
+            <>
+              <svg className="animate-spin" width="16" height="16" fill="none" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              AI đang tính toán tổ hợp...
+            </>
+          ) : 'Tạo bộ số gợi ý bằng AI'}
+        </button>
+      </div>
+
+      {/* Generated Tickets Result */}
+      {generatedTickets.length > 0 && (
+        <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h4 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-muted)' }}>
+            Danh sách vé số gợi ý ({strategy === 'balanced' ? 'Cân bằng AI' : (strategy === 'hot' ? 'Số Nóng' : (strategy === 'cold' ? 'Lô Gan' : 'Ngẫu nhiên'))}):
+          </h4>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {generatedTickets.map((ticket, idx) => (
+              <div key={idx} className="glass-panel" style={{ 
+                background: 'rgba(255,255,255,0.01)', 
+                padding: '12px 16px', 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px',
+                border: '1px solid rgba(255,255,255,0.03)'
+              }}>
+                <span style={{ fontWeight: 'bold', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Vé #{idx + 1}</span>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="balls-container" style={{ margin: 0 }}>
+                    {ticket.numbers.map((n, i) => (
+                      <span key={i} className="ball" style={{ width: '32px', height: '32px', fontSize: '0.85rem' }}>{n}</span>
+                    ))}
+                    {ticket.special && (
+                      <>
+                        <span style={{ color: 'var(--border-color)', fontSize: '1rem' }}>|</span>
+                        <span className="ball power-bonus" style={{ width: '32px', height: '32px', fontSize: '0.85rem' }}>{ticket.special}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Tổng: <strong>{ticket.numbers.reduce((s, n) => s + parseInt(n, 10), 0)}</strong> 
+                  {ticket.special && ` | ĐB: ${ticket.special}`}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+export default PredictionPanel;

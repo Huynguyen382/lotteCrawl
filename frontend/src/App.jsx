@@ -5,6 +5,7 @@ import ManagementPanel from './components/ManagementPanel';
 import DrawTable from './components/DrawTable';
 import MobileCards from './components/MobileCards';
 import StatsPanel from './components/StatsPanel';
+import PredictionPanel from './components/PredictionPanel';
 
 function App() {
   const [game, setGame] = useState('645'); // '645' for Mega, '655' for Power
@@ -445,6 +446,22 @@ function App() {
               >
                 Thống kê vắng mặt
               </button>
+              <button
+                className={`tab-btn ${activeTab === 'prediction' ? 'active' : ''}`}
+                onClick={() => setActiveTab('prediction')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: activeTab === 'prediction' ? 'var(--accent, #e63946)' : 'var(--text-muted, #8d99ae)',
+                  borderBottom: activeTab === 'prediction' ? '2px solid var(--accent, #e63946)' : 'none',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '0.95rem'
+                }}
+              >
+                Gợi ý số AI
+              </button>
             </div>
           )}
  
@@ -537,9 +554,15 @@ function App() {
                   calculateDeltas={calculateDeltas} 
                 />
               </>
-            ) : (
+            ) : activeTab === 'stats' ? (
               /* Statistics panel */
               <StatsPanel 
+                game={game} 
+                visibleResults={visibleResults} 
+              />
+            ) : (
+              /* AI Prediction panel */
+              <PredictionPanel 
                 game={game} 
                 visibleResults={visibleResults} 
               />
