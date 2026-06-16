@@ -7,7 +7,7 @@ import MobileCards from './components/MobileCards';
 import StatsPanel from './components/StatsPanel';
 import PredictionPanel from './components/PredictionPanel';
 import PredictionV2Panel from './components/PredictionV2Panel';
-import LotteryCage from './components/LotteryCage';
+
 
 function App() {
   const [game, setGame] = useState('645'); // '645' for Mega, '655' for Power
@@ -490,22 +490,7 @@ function App() {
               >
                 AI V2 (Scoring)
               </button>
-              <button
-                className={`tab-btn ${activeTab === 'cage' ? 'active' : ''}`}
-                onClick={() => setActiveTab('cage')}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: activeTab === 'cage' ? 'var(--accent, #e63946)' : 'var(--text-muted, #8d99ae)',
-                  borderBottom: activeTab === 'cage' ? '2px solid var(--accent, #e63946)' : 'none',
-                  padding: '8px 16px',
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  fontSize: '0.95rem'
-                }}
-              >
-                Lồng Quay Vật Lý
-              </button>
+
             </div>
           )}
  
@@ -613,9 +598,6 @@ function App() {
                 ticketCount={predictionTicketCountV2}
                 setTicketCount={setPredictionTicketCountV2}
               />
-            ) : activeTab === 'cage' ? (
-              /* Physical Lottery Cage */
-              <LotteryCage game={game} />
             ) : (
               /* AI Prediction panel */
               <PredictionPanel 

@@ -37,9 +37,7 @@ function PredictionV2Panel({
       }
     }
     fetchStats();
-    // Clear previously generated tickets when game changes
-    setGeneratedTickets([]);
-  }, [game, setGeneratedTickets]);
+  }, [game]);
 
   const generateRandomTicket = () => {
     const nums = new Set();
