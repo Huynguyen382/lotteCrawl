@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { API_URL } from '../App';
+import { API_BASE } from '../config';
 
 function PredictionV2Panel({ 
   game, 
@@ -22,7 +22,7 @@ function PredictionV2Panel({
       setIsLoadingStats(true);
       setError('');
       try {
-        const response = await fetch(`${API_URL}/api/stats/v2/${game}`);
+        const response = await fetch(`${API_BASE}/api/stats/v2/${game}`);
         const data = await response.json();
         if (data.success && data.data) {
           setStatsConfig(data.data);
