@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { API_BASE } from '../config';
 
-function ManagementPanel({ fetchLatestInfo }) {
+function ManagementPanel({ fetchLatestInfo, onSuccess }) {
   const [mgmtTab, setMgmtTab] = useState('quick'); // 'quick' or 'manual'
   const [mgmtGame, setMgmtGame] = useState('645');
   const [mgmtDrawId, setMgmtDrawId] = useState('');
@@ -36,6 +36,7 @@ function ManagementPanel({ fetchLatestInfo }) {
         setMgmtMsg({ text: data.message || 'Thành công!', type: 'success' });
         setMgmtDrawId('');
         fetchLatestInfo();
+        if (onSuccess) onSuccess();
       } else {
         setMgmtMsg({ text: data.error || 'Có lỗi xảy ra.', type: 'error' });
       }
@@ -63,7 +64,7 @@ function ManagementPanel({ fetchLatestInfo }) {
     const year = dateObj.getFullYear();
     const dateStr = `${day}/${month}/${year}`;
     
-    const numCount = mgmtGame === '645' ? 6 : 7;
+    const numCount = mgmtGame === '655' ? 7 : 6;
     const numbers = [];
     for (let i = 0; i < numCount; i++) {
       const val = mgmtNumbers[i]?.trim();
@@ -224,6 +225,7 @@ function ManagementPanel({ fetchLatestInfo }) {
         setMgmtG2Count('0');
         setMgmtG3Count('0');
         fetchLatestInfo();
+        if (onSuccess) onSuccess();
       } else {
         setMgmtMsg({ text: data.error || 'Có lỗi xảy ra.', type: 'error' });
       }

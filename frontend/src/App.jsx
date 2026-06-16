@@ -34,6 +34,11 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('preview');
 
+  // Lifted state for AI predictions to avoid data loss on tab switch
+  const [predictionTickets, setPredictionTickets] = useState([]);
+  const [predictionStrategy, setPredictionStrategy] = useState('balanced');
+  const [predictionTicketCount, setPredictionTicketCount] = useState(3);
+
   const logContainerRef = useRef(null);
   const eventSourceRef = useRef(null);
 
@@ -47,6 +52,7 @@ function App() {
   // Load latest draw info on game change
   useEffect(() => {
     fetchLatestInfo();
+    setPredictionTickets([]); // Reset predicted tickets when game type changes
   }, [game]);
 
   const fetchLatestInfo = async () => {
@@ -386,7 +392,7 @@ function App() {
           </div>
 
           {/* Quick fetch & manual entry forms */}
-          <ManagementPanel fetchLatestInfo={fetchLatestInfo} />
+          <ManagementPanel fetchLatestInfo={fetchLatestInfo} onSuccess={handleStartScrape} />
         </div>
 
         {/* Right Column: Results Dashboard */}
@@ -565,6 +571,12 @@ function App() {
               <PredictionPanel 
                 game={game} 
                 visibleResults={visibleResults} 
+                generatedTickets={predictionTickets}
+                setGeneratedTickets={setPredictionTickets}
+                strategy={predictionStrategy}
+                setStrategy={setPredictionStrategy}
+                ticketCount={predictionTicketCount}
+                setTicketCount={setPredictionTicketCount}
               />
             )
           ) : (

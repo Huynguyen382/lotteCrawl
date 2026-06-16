@@ -1,11 +1,18 @@
 import React, { useState, useEffect } from 'react';
 
-function PredictionPanel({ game, visibleResults }) {
-  const [ticketCount, setTicketCount] = useState(3);
-  const [strategy, setStrategy] = useState('balanced'); // 'balanced', 'hot', 'cold', 'random'
-  const [generatedTickets, setGeneratedTickets] = useState([]);
+function PredictionPanel({ 
+  game, 
+  visibleResults, 
+  generatedTickets, 
+  setGeneratedTickets, 
+  strategy, 
+  setStrategy, 
+  ticketCount, 
+  setTicketCount 
+}) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiReport, setAiReport] = useState(null);
+  const [searchTicketQuery, setSearchTicketQuery] = useState('');
 
   const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
   const mainLength = game === '535' ? 5 : 6;
@@ -91,7 +98,7 @@ function PredictionPanel({ game, visibleResults }) {
       topHot: hotNums.slice(0, 5),
       topCold: coldNums.slice(0, 5)
     });
-    setGeneratedTickets([]);
+    setSearchTicketQuery('');
   }, [game, visibleResults]);
 
   // Handle generation of smart tickets
@@ -123,45 +130,37 @@ function PredictionPanel({ game, visibleResults }) {
           let pool = [];
 
           if (strategy === 'balanced') {
-            // Pick from all numbers, but we will filter the output combination
             pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0'));
           } else if (strategy === 'hot') {
-            // 60% probability from Hot numbers, 40% from rest
             if (Math.random() < 0.6) {
               pool = hotList;
             } else {
               pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0')).filter(n => !hotList.includes(n));
             }
           } else if (strategy === 'cold') {
-            // 60% probability from Cold numbers, 40% from rest
             if (Math.random() < 0.6) {
               pool = coldList;
             } else {
               pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0')).filter(n => !coldList.includes(n));
             }
           } else {
-            // Random
             pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0'));
           }
 
-          // Pick a random number from pool
           const randomNum = pool[Math.floor(Math.random() * pool.length)];
           if (randomNum && !ticketNums.includes(randomNum)) {
             ticketNums.push(randomNum);
           }
 
-          // If we have enough numbers, check combination filters for "balanced" strategy
           if (ticketNums.length === mainLength) {
             const numVals = ticketNums.map(n => parseInt(n, 10));
             const sum = numVals.reduce((s, n) => s + n, 0);
 
-            // Filter by sum
             if (sum < minSum || sum > maxSum) {
-              ticketNums = []; // Reset and retry
+              ticketNums = [];
               continue;
             }
 
-            // Filter by Odd/Even (should be balanced: e.g. 3-3, 2-4, 4-2 for 6 balls; 2-3, 3-2 for 5 balls)
             const odds = numVals.filter(n => n % 2 !== 0).length;
             if (mainLength === 6 && (odds < 2 || odds > 4)) {
               ticketNums = [];
@@ -172,7 +171,6 @@ function PredictionPanel({ game, visibleResults }) {
               continue;
             }
 
-            // Filter by High/Low (Small/Large)
             const highs = numVals.filter(n => n > midPoint).length;
             if (mainLength === 6 && (highs < 2 || highs > 4)) {
               ticketNums = [];
@@ -185,7 +183,6 @@ function PredictionPanel({ game, visibleResults }) {
           }
         }
 
-        // If attempts exceeded and we couldn't satisfy filters, just sort whatever we got or do pure random fallback
         if (ticketNums.length < mainLength) {
           ticketNums = [];
           while (ticketNums.length < mainLength) {
@@ -196,17 +193,14 @@ function PredictionPanel({ game, visibleResults }) {
 
         ticketNums.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
 
-        // For Lotto 5/35 and Power 6/55, also generate 1 Special Number
         let specialNum = null;
         if (game === '655') {
-          // Special ball between 1 and 55, not in the main numbers
           let r = Math.floor(Math.random() * 55) + 1;
           while (ticketNums.includes(String(r).padStart(2, '0'))) {
             r = Math.floor(Math.random() * 55) + 1;
           }
           specialNum = String(r).padStart(2, '0');
         } else if (game === '535') {
-          // Special ball between 1 and 12
           specialNum = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
         }
 
@@ -217,9 +211,25 @@ function PredictionPanel({ game, visibleResults }) {
       }
 
       setGeneratedTickets(tickets);
+      setSearchTicketQuery(''); // Reset search query on new generation
       setIsGenerating(false);
     }, 1200);
   };
+
+  // Filter generated tickets based on query
+  const filteredTickets = generatedTickets.filter((ticket) => {
+    if (!searchTicketQuery.trim()) return true;
+    const parts = searchTicketQuery.toLowerCase().split(/[\s,.-]+/).filter(Boolean);
+    return parts.every((part) => {
+      const partInt = parseInt(part, 10);
+      if (!isNaN(partInt)) {
+        const inMain = ticket.numbers.some(n => parseInt(n, 10) === partInt);
+        const inSpecial = ticket.special ? parseInt(ticket.special, 10) === partInt : false;
+        return inMain || inSpecial;
+      }
+      return false;
+    });
+  });
 
   if (visibleResults.length === 0) {
     return (
@@ -310,16 +320,18 @@ function PredictionPanel({ game, visibleResults }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
           <div className="form-group" style={{ margin: 0 }}>
-            <label>Số lượng vé gợi ý</label>
-            <select 
-              className="select-field"
+            <label>Số lượng vé gợi ý (Nhập từ 1 - 50)</label>
+            <input 
+              type="number"
+              min="1"
+              max="50"
+              className="input-field"
               value={ticketCount}
-              onChange={(e) => setTicketCount(parseInt(e.target.value, 10))}
-            >
-              <option value="1">1 vé</option>
-              <option value="3">3 vé</option>
-              <option value="5">5 vé</option>
-            </select>
+              onChange={(e) => {
+                const val = Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1));
+                setTicketCount(val);
+              }}
+            />
           </div>
 
           <div className="form-group" style={{ margin: 0 }}>
@@ -358,44 +370,113 @@ function PredictionPanel({ game, visibleResults }) {
       {/* Generated Tickets Result */}
       {generatedTickets.length > 0 && (
         <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h4 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-muted)' }}>
-            Danh sách vé số gợi ý ({strategy === 'balanced' ? 'Cân bằng AI' : (strategy === 'hot' ? 'Số Nóng' : (strategy === 'cold' ? 'Lô Gan' : 'Ngẫu nhiên'))}):
-          </h4>
           
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <h4 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-muted)' }}>
+              Danh sách vé số gợi ý ({strategy === 'balanced' ? 'Cân bằng AI' : (strategy === 'hot' ? 'Số Nóng' : (strategy === 'cold' ? 'Lô Gan' : 'Ngẫu nhiên'))}):
+            </h4>
+            
+            {/* Search Filter Box */}
+            <div className="input-group" style={{ position: 'relative', width: '260px' }}>
+              <input
+                type="text"
+                placeholder="Tìm vé chứa số (ví dụ: 05, 12)..."
+                className="input-field"
+                value={searchTicketQuery}
+                onChange={(e) => setSearchTicketQuery(e.target.value)}
+                style={{ paddingLeft: '32px', paddingRight: '28px', height: '32px', fontSize: '0.8rem' }}
+              />
+              <svg 
+                width="14" 
+                height="14" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+                style={{
+                  position: 'absolute',
+                  left: '10px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'var(--text-muted)'
+                }}
+              >
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              {searchTicketQuery && (
+                <button 
+                  onClick={() => setSearchTicketQuery('')}
+                  style={{
+                    position: 'absolute',
+                    right: '8px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    lineHeight: '1'
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          {searchTicketQuery && (
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Tìm thấy <strong>{filteredTickets.length}</strong> / {generatedTickets.length} vé chứa số mong muốn.
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {generatedTickets.map((ticket, idx) => (
-              <div key={idx} className="glass-panel" style={{ 
-                background: 'rgba(255,255,255,0.01)', 
-                padding: '12px 16px', 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '12px',
-                border: '1px solid rgba(255,255,255,0.03)'
-              }}>
-                <span style={{ fontWeight: 'bold', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Vé #{idx + 1}</span>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div className="balls-container" style={{ margin: 0 }}>
-                    {ticket.numbers.map((n, i) => (
-                      <span key={i} className="ball" style={{ width: '32px', height: '32px', fontSize: '0.85rem' }}>{n}</span>
-                    ))}
-                    {ticket.special && (
-                      <>
-                        <span style={{ color: 'var(--border-color)', fontSize: '1rem' }}>|</span>
-                        <span className="ball power-bonus" style={{ width: '32px', height: '32px', fontSize: '0.85rem' }}>{ticket.special}</span>
-                      </>
-                    )}
+            {filteredTickets.map((ticket) => {
+              const originalIdx = generatedTickets.indexOf(ticket);
+              return (
+                <div key={originalIdx} className="glass-panel" style={{ 
+                  background: 'rgba(255,255,255,0.01)', 
+                  padding: '12px 16px', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  border: '1px solid rgba(255,255,255,0.03)'
+                }}>
+                  <span style={{ fontWeight: 'bold', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Vé #{originalIdx + 1}</span>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className="balls-container" style={{ margin: 0 }}>
+                      {ticket.numbers.map((n, i) => (
+                        <span key={i} className="ball" style={{ width: '32px', height: '32px', fontSize: '0.85rem' }}>{n}</span>
+                      ))}
+                      {ticket.special && (
+                        <>
+                          <span style={{ color: 'var(--border-color)', fontSize: '1rem' }}>|</span>
+                          <span className="ball power-bonus" style={{ width: '32px', height: '32px', fontSize: '0.85rem' }}>{ticket.special}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Tổng: <strong>{ticket.numbers.reduce((s, n) => s + parseInt(n, 10), 0)}</strong> 
+                    {ticket.special && ` | ĐB: ${ticket.special}`}
                   </div>
                 </div>
+              );
+            })}
 
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Tổng: <strong>{ticket.numbers.reduce((s, n) => s + parseInt(n, 10), 0)}</strong> 
-                  {ticket.special && ` | ĐB: ${ticket.special}`}
-                </div>
+            {filteredTickets.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-dimmed)', fontSize: '0.85rem' }}>
+                Không có vé nào chứa bộ số tìm kiếm.
               </div>
-            ))}
+            )}
           </div>
         </div>
       )}
