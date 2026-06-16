@@ -7,10 +7,13 @@ require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 
 const CACHE_FILE = path.join(__dirname, '..', '..', 'cache.json');
 const connectionString = process.env.DATABASE_URL;
+const onlineConnectionString = process.env.ONLINE_DATABASE_URL;
 
 let pool = null;
 let usePostgres = false;
+let onlinePool = null;
 let localCache = { "645": {}, "655": {}, "535": {} };
+
 
 function loadLocalCache() {
     try {
@@ -87,6 +90,157 @@ async function initDb() {
         usePostgres = false;
         loadLocalCache();
     }
+
+    // Khởi tạo cơ sở dữ liệu online và đồng bộ delta bất đồng bộ
+    await initOnlineDb();
+}
+
+async function initOnlineDb() {
+    if (onlineConnectionString) {
+        console.log('[db-sync] ONLINE_DATABASE_URL is configured. Attempting to connect to Online PostgreSQL...');
+        try {
+            const isLocalhost = onlineConnectionString.includes('localhost') || onlineConnectionString.includes('127.0.0.1');
+            const poolConfig = {
+                connectionString: onlineConnectionString
+            };
+            if (!isLocalhost) {
+                poolConfig.ssl = {
+                    rejectUnauthorized: false
+                };
+            }
+            onlinePool = new Pool(poolConfig);
+            
+            // Kiểm tra kết nối
+            await onlinePool.query('SELECT NOW()');
+            console.log('[db-sync] Successfully connected to Online PostgreSQL.');
+
+            // Đảm bảo bảng đích tồn tại trên online DB
+            const createTableQuery = `
+                CREATE TABLE IF NOT EXISTS draw_results (
+                     game VARCHAR(10) NOT NULL,
+                     draw_id INT NOT NULL,
+                     draw_id_str VARCHAR(10) NOT NULL,
+                     date_str VARCHAR(20) NOT NULL,
+                     date_ymd VARCHAR(20) NOT NULL,
+                     numbers JSONB NOT NULL,
+                     prizes JSONB NOT NULL,
+                     scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                     PRIMARY KEY (game, draw_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_draw_results_date_ymd ON draw_results(game, date_ymd);
+            `;
+            await onlinePool.query(createTableQuery);
+            console.log('[db-sync] Online database schema verified (draw_results table ready).');
+            
+            // Kích hoạt đồng bộ hóa delta bất đồng bộ (non-blocking)
+            syncLocalToOnline().catch(err => {
+                console.error('[db-sync] Error in background delta sync:', err.message);
+            });
+        } catch (error) {
+            console.error('[db-sync] Error connecting to Online PostgreSQL:', error.message);
+            onlinePool = null;
+        }
+    } else {
+        console.log('[db-sync] ONLINE_DATABASE_URL not set. Running without online DB sync.');
+    }
+}
+
+async function saveToOnlineDbInternal(game, draw) {
+    if (!onlinePool || !draw || !draw.drawId) return false;
+    const id = parseInt(draw.drawId, 10);
+    try {
+        const numbersStr = typeof draw.numbers === 'string' ? draw.numbers : JSON.stringify(draw.numbers);
+        const prizesStr = typeof draw.prizes === 'string' ? draw.prizes : JSON.stringify(draw.prizes);
+        
+        await onlinePool.query(
+            `INSERT INTO draw_results (game, draw_id, draw_id_str, date_str, date_ymd, numbers, prizes, scraped_at)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+              ON CONFLICT (game, draw_id) 
+              DO UPDATE SET 
+                 draw_id_str = EXCLUDED.draw_id_str,
+                 date_str = EXCLUDED.date_str,
+                 date_ymd = EXCLUDED.date_ymd,
+                 numbers = EXCLUDED.numbers,
+                 prizes = EXCLUDED.prizes,
+                 scraped_at = EXCLUDED.scraped_at`,
+            [
+                game,
+                id,
+                draw.drawIdStr || String(id).padStart(5, '0'),
+                draw.dateStr,
+                draw.dateYmd,
+                numbersStr,
+                prizesStr,
+                draw.scrapedAt || new Date().toISOString()
+            ]
+        );
+        return true;
+    } catch (error) {
+        console.error(`[db-sync] Error saving draw ${game} #${id} to online DB:`, error.message);
+        return false;
+    }
+}
+
+async function syncLocalToOnline() {
+    if (!onlinePool) return;
+    console.log('[db-sync] Starting delta scan: comparing local vs online database...');
+    try {
+        // Lấy danh sách metadata của các kỳ quay hiện có trên online DB
+        const onlineRes = await onlinePool.query('SELECT game, draw_id as "drawId" FROM draw_results');
+        const onlineKeys = new Set(onlineRes.rows.map(r => `${r.game}_${r.drawId}`));
+        console.log(`[db-sync] Online DB has ${onlineKeys.size} records.`);
+
+        // Thu thập toàn bộ dữ liệu local
+        let localDraws = [];
+        if (usePostgres && pool) {
+            const localRes = await pool.query(
+                `SELECT game, draw_id as "drawId", draw_id_str as "drawIdStr", date_str as "dateStr", date_ymd as "dateYmd", numbers, prizes, scraped_at as "scrapedAt" FROM draw_results`
+            );
+            localDraws = localRes.rows;
+        } else {
+            // Đọc từ local cache file
+            for (const game of ['645', '655', '535']) {
+                const gameCache = localCache[game] || {};
+                for (const drawId of Object.keys(gameCache)) {
+                    const draw = gameCache[drawId];
+                    localDraws.push({
+                        game,
+                        drawId: draw.drawId,
+                        drawIdStr: draw.drawIdStr,
+                        dateStr: draw.dateStr,
+                        dateYmd: draw.dateYmd,
+                        numbers: draw.numbers,
+                        prizes: draw.prizes,
+                        scrapedAt: draw.scrapedAt
+                    });
+                }
+            }
+        }
+        console.log(`[db-sync] Local DB/Cache has ${localDraws.length} records.`);
+
+        // Lọc ra danh sách các kỳ quay chưa có trên online
+        const missingDraws = localDraws.filter(d => !onlineKeys.has(`${d.game}_${d.drawId}`));
+
+        if (missingDraws.length > 0) {
+            console.log(`[db-sync] Found ${missingDraws.length} missing draws on online database. Starting synchronization...`);
+            let successCount = 0;
+            for (const draw of missingDraws) {
+                const success = await saveToOnlineDbInternal(draw.game, draw);
+                if (success) {
+                    successCount++;
+                }
+                if (successCount % 100 === 0) {
+                    // Giải phóng event loop để tránh nghẽn thread nếu có quá nhiều bản ghi đồng bộ
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            }
+            console.log(`[db-sync] Delta synchronization completed: ${successCount}/${missingDraws.length} draws successfully synced.`);
+        } else {
+            console.log('[db-sync] Online database is fully synchronized. No missing records found.');
+        }
+    } catch (error) {
+        console.error('[db-sync] Error running delta scan:', error.message);
+    }
 }
 
 async function query(text, params) {
@@ -144,6 +298,13 @@ async function saveDraw(game, draw) {
                     draw.scrapedAt || new Date().toISOString()
                 ]
             );
+            
+            // Đồng bộ sang online DB bất đồng bộ (non-blocking)
+            if (onlinePool) {
+                saveToOnlineDbInternal(game, draw).catch(err => {
+                    console.error(`[db-sync] Background sync error for draw ${game} #${id}:`, err.message);
+                });
+            }
             return true;
         } catch (error) {
             console.error(`[db] Error saving draw ${game} #${id}:`, error.message);
@@ -161,6 +322,13 @@ async function saveDraw(game, draw) {
             scrapedAt: draw.scrapedAt || new Date().toISOString()
         };
         saveLocalCache();
+        
+        // Đồng bộ sang online DB bất đồng bộ (non-blocking)
+        if (onlinePool) {
+            saveToOnlineDbInternal(game, draw).catch(err => {
+                console.error(`[db-sync] Background sync error for draw ${game} #${id}:`, err.message);
+            });
+        }
         return true;
     }
 }
