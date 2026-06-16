@@ -320,15 +320,15 @@ function PredictionPanel({
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
           <div className="form-group" style={{ margin: 0 }}>
-            <label>Số lượng vé gợi ý (Nhập từ 1 - 50)</label>
+            <label>Số lượng vé gợi ý (Nhập từ 1 - 1000)</label>
             <input 
               type="number"
               min="1"
-              max="50"
+              max="1000"
               className="input-field"
               value={ticketCount}
               onChange={(e) => {
-                const val = Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1));
+                const val = Math.max(1, Math.min(1000, parseInt(e.target.value, 10) || 1));
                 setTicketCount(val);
               }}
             />
