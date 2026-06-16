@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE } from '../config';
+import './PredictionV2Panel.css'; // Sẽ tạo file CSS riêng để tách biệt style
 
 function PredictionV2Panel({ 
   game, 
@@ -59,9 +60,11 @@ function PredictionV2Panel({
     const mean = config.sums.mean || (game === '645' ? 138 : (game === '655' ? 168 : 90));
     if (sum >= mean - 15 && sum <= mean + 15) {
       score += 3;
-      reasons.push(`Tổng điểm vàng (${sum})`);
+      reasons.push({ type: 'success', text: `Tổng điểm vàng (${sum})` });
     } else if (sum < mean - 30 || sum > mean + 30) {
       score -= 2;
+    } else {
+      reasons.push({ type: 'neutral', text: `Tổng ổn định (${sum})` });
     }
 
     // 2. Consecutive Rule
@@ -71,23 +74,23 @@ function PredictionV2Panel({
     }
     if (consecutiveCount === 1) {
       score += 2;
-      reasons.push('Có cặp số liền kề');
+      reasons.push({ type: 'accent', text: 'Cặp số liền kề' });
     } else if (consecutiveCount === 2) {
       score += 1;
     } else if (consecutiveCount >= 3) {
-      score -= 3; // Quá nhiều số liền kề thường rất hiếm
+      score -= 3;
     }
 
     // 3. Association Rule (Pairs)
     let foundPair = false;
-    const top10Pairs = config.topPairs.slice(0, 10);
+    const top10Pairs = config.topPairs.slice(0, 15);
     for (let i = 0; i < ticketNums.length; i++) {
       for (let j = i + 1; j < ticketNums.length; j++) {
         const p1 = `${ticketNums[i]}-${ticketNums[j]}`;
         if (top10Pairs.includes(p1)) {
           score += 2;
           foundPair = true;
-          reasons.push(`Có cặp tỷ lệ cao [${ticketNums[i]}, ${ticketNums[j]}]`);
+          reasons.push({ type: 'primary', text: `Cặp tỷ lệ cao [${ticketNums[i]}, ${ticketNums[j]}]` });
         }
       }
     }
@@ -104,9 +107,8 @@ function PredictionV2Panel({
       score += 1;
     }
     if (coldCount === 1) {
-      // Một số lạnh chín mùi sắp nổ
       score += 1;
-      reasons.push('Đón lỏng số lạnh');
+      reasons.push({ type: 'warning', text: 'Đón lỏng số lạnh' });
     }
 
     // 5. Odd/Even ratio
@@ -115,7 +117,7 @@ function PredictionV2Panel({
     if (isBalanced) {
       score += 1;
     } else {
-      score -= 2; // Bất cân bằng quá cao (Toàn chẵn / Toàn lẻ)
+      score -= 2;
     }
 
     return { score, reasons };
@@ -125,7 +127,6 @@ function PredictionV2Panel({
     if (!statsConfig) return;
     setIsGenerating(true);
 
-    // Simulate thinking delay so UI can show loader
     setTimeout(() => {
       const NUM_CANDIDATES = 10000;
       const candidates = [];
@@ -148,7 +149,6 @@ function PredictionV2Panel({
         if (!seenSignatures.has(sig)) {
           seenSignatures.add(sig);
           
-          // Generate special number if applicable
           let specialStr = null;
           if (game === '655') {
             let r = Math.floor(Math.random() * 55) + 1;
@@ -160,136 +160,137 @@ function PredictionV2Panel({
             specialStr = String(r).padStart(2, '0');
           }
 
+          // Filter unique reasons
+          const uniqueReasons = [];
+          const seenReasonTexts = new Set();
+          candidates[i].reasons.forEach(r => {
+            if (!seenReasonTexts.has(r.text)) {
+              seenReasonTexts.add(r.text);
+              uniqueReasons.push(r);
+            }
+          });
+
           finalTickets.push({
             id: finalTickets.length + 1,
             numbers: candidates[i].nums.map(n => String(n).padStart(2, '0')),
             specialNumber: specialStr,
             score: candidates[i].score,
-            reasons: [...new Set(candidates[i].reasons)] // Remove duplicate reasons
+            reasons: uniqueReasons
           });
         }
       }
 
       setGeneratedTickets(finalTickets);
       setIsGenerating(false);
-    }, 100);
+    }, 150); // slight delay for animation
   };
 
   return (
-    <div className="prediction-panel v2-panel fade-in">
-      <div className="section-header">
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '1.2rem' }}>🧠</span>
-          Mô hình AI V2 (Scoring Heuristic)
-        </h3>
-        <span className="badge badge-pulse" style={{ background: 'var(--success, #2a9d8f)', color: '#fff', padding: '4px 10px', borderRadius: '12px', fontSize: '0.8rem' }}>Học Máy Lịch Sử</span>
+    <div className="v2-container slide-up">
+      <div className="v2-header">
+        <div className="v2-title-wrapper">
+          <div className="v2-icon-box">🧠</div>
+          <div>
+            <h3>Mô Hình AI V2 (Heuristic Scoring)</h3>
+            <p>Học máy dựa trên thống kê xác suất toàn diện</p>
+          </div>
+        </div>
+        <div className="v2-badge-glow">Premium Mode</div>
       </div>
 
-      <div className="control-group" style={{ background: 'var(--bg-light, #f8f9fa)', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-        <p style={{ margin: '0 0 15px 0', fontSize: '0.9rem', color: 'var(--text-muted, #6c757d)' }}>
-          Thuật toán V2 đánh giá <strong>10,000</strong> vé ngẫu nhiên theo Luật Trung Bình Tổng, Chu Kỳ Điểm Rơi, và Xác Suất Cặp Số Liên Kết từ toàn bộ kho dữ liệu thực tế.
+      <div className="glass-panel v2-control-panel">
+        <p className="v2-description">
+          Thuật toán V2 quét và đánh giá <strong>10,000 vé ngẫu nhiên</strong> theo các quy luật thực tế: Điểm rơi Toán Học, Tần suất Chẵn/Lẻ, và Ma trận Liên kết. 
         </p>
 
-        {error && <div style={{ color: 'red', fontSize: '0.85rem', marginBottom: '10px' }}>{error}</div>}
+        {error && <div className="v2-error-banner"><i className="fas fa-exclamation-triangle"></i> {error}</div>}
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'center' }}>
-          <div className="input-field">
-            <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Số vé cần xuất (Top N):</label>
-            <input 
-              type="number" 
-              min="1" 
-              max="100" 
-              value={ticketCount}
-              onChange={(e) => setTicketCount(Math.max(1, parseInt(e.target.value) || 1))}
-              style={{ padding: '8px', width: '100px', borderRadius: '4px', border: '1px solid #ced4da' }}
-            />
+        <div className="v2-actions">
+          <div className="v2-input-group">
+            <label>Số vé xuất ra (Top N)</label>
+            <div className="v2-input-wrapper">
+              <input 
+                type="number" 
+                min="1" max="100" 
+                value={ticketCount}
+                onChange={(e) => setTicketCount(Math.max(1, parseInt(e.target.value) || 1))}
+              />
+              <span className="v2-input-suffix">Vé</span>
+            </div>
           </div>
 
           <button 
-            className="action-btn primary"
+            className={`v2-btn-generate ${isGenerating ? 'generating' : ''}`}
             onClick={handleGenerateV2}
             disabled={isGenerating || isLoadingStats || !statsConfig}
-            style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}
           >
             {isGenerating ? (
-              <><div className="spinner small"></div> Đang chấm điểm 10,000 vé...</>
+              <><span className="v2-spinner"></span> Đang chấm điểm 10,000 vé...</>
             ) : isLoadingStats ? (
-              <><div className="spinner small"></div> Đang tải mô hình...</>
+              <><span className="v2-spinner"></span> Đang nạp {game} model...</>
             ) : (
-              <><span style={{ fontSize: '1.2rem' }}>⚡</span> Bắt đầu Huấn luyện & Sinh Vé</>
+              <><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Huấn Luyện & Sinh Vé</>
             )}
+            <div className="v2-btn-glow"></div>
           </button>
         </div>
         
         {statsConfig && (
-          <div style={{ marginTop: '15px', fontSize: '0.8rem', color: 'var(--text-muted, #6c757d)', display: 'flex', gap: '15px' }}>
-            <span><strong>Dữ liệu:</strong> {statsConfig.totalDraws} kỳ quay</span>
-            <span><strong>Điểm rơi tổng:</strong> {statsConfig.sums.mean}</span>
+          <div className="v2-stats-summary">
+            <div className="v2-stat-chip">
+              <span className="v2-stat-label">Kho Dữ Liệu</span>
+              <span className="v2-stat-value">{statsConfig.totalDraws} kỳ quay</span>
+            </div>
+            <div className="v2-stat-chip">
+              <span className="v2-stat-label">Tổng Trung Bình</span>
+              <span className="v2-stat-value">{statsConfig.sums.mean}</span>
+            </div>
+            <div className="v2-stat-chip">
+              <span className="v2-stat-label">Cặp Nóng Nhất</span>
+              <span className="v2-stat-value">{statsConfig.topPairs[0]}</span>
+            </div>
           </div>
         )}
       </div>
 
       {generatedTickets.length > 0 && (
-        <div className="generated-results slide-up">
-          <h4 style={{ marginBottom: '15px' }}>Top {ticketCount} Vé Tối Ưu Nhất (Điểm Cao Nhất)</h4>
-          <div className="ticket-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {generatedTickets.map((ticket) => (
-              <div key={ticket.id} className="ticket-item" style={{ 
-                background: '#fff', 
-                border: '1px solid #e9ecef', 
-                borderRadius: '8px', 
-                padding: '15px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="ticket-id" style={{ fontWeight: 'bold', color: 'var(--text-muted, #6c757d)' }}>
-                    Vé #{ticket.id}
-                  </div>
-                  <div className="ticket-score" style={{ 
-                    background: 'var(--warning, #ffca3a)', 
-                    color: '#333', 
-                    padding: '3px 10px', 
-                    borderRadius: '12px', 
-                    fontSize: '0.85rem',
-                    fontWeight: 'bold'
-                  }}>
+        <div className="v2-results-area">
+          <h4 className="v2-results-title">Top {ticketCount} Vé Tối Ưu Nhất (Điểm Sinh Tồn Trực Tiếp)</h4>
+          <div className="v2-ticket-grid">
+            {generatedTickets.map((ticket, index) => (
+              <div key={ticket.id} className="glass-panel v2-ticket-card" style={{animationDelay: `${index * 0.05}s`}}>
+                <div className="v2-ticket-header">
+                  <div className="v2-ticket-id">Phương án #{ticket.id}</div>
+                  <div className={`v2-score-badge ${ticket.score >= 7 ? 'super-high' : ticket.score >= 5 ? 'high' : 'medium'}`}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
                     Điểm AI: {ticket.score}/9
                   </div>
                 </div>
 
-                <div className="ticket-numbers" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div className="v2-ticket-balls">
                   {ticket.numbers.map((num, idx) => (
-                    <span key={idx} className="ball main-ball" style={{ 
-                      width: '36px', height: '36px', borderRadius: '50%', 
-                      background: 'var(--accent, #e63946)', color: '#fff',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 'bold', fontSize: '1rem',
-                      boxShadow: '0 2px 5px rgba(230, 57, 70, 0.3)'
-                    }}>
+                    <div key={idx} className="v2-ball main">
                       {num}
-                    </span>
+                    </div>
                   ))}
                   {ticket.specialNumber && (
-                    <span className="ball special-ball" style={{ 
-                      width: '36px', height: '36px', borderRadius: '50%', 
-                      background: 'var(--warning, #ffca3a)', color: '#333',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 'bold', fontSize: '1rem',
-                      boxShadow: '0 2px 5px rgba(255, 202, 58, 0.3)',
-                      marginLeft: '10px'
-                    }}>
+                    <div className="v2-ball special">
                       {ticket.specialNumber}
-                    </span>
+                    </div>
                   )}
                 </div>
 
                 {ticket.reasons && ticket.reasons.length > 0 && (
-                  <div className="ticket-reasons" style={{ fontSize: '0.8rem', color: '#1d3557', marginTop: '5px', display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                  <div className="v2-ticket-reasons">
                     {ticket.reasons.map((r, i) => (
-                      <span key={i} style={{ background: '#e9ecef', padding: '2px 8px', borderRadius: '4px' }}>✓ {r}</span>
+                      <span key={i} className={`v2-reason-pill ${r.type}`}>
+                        {r.type === 'success' && '✓ '}
+                        {r.type === 'accent' && '✦ '}
+                        {r.type === 'primary' && '🔥 '}
+                        {r.type === 'warning' && '❄ '}
+                        {r.type === 'neutral' && '• '}
+                        {r.text}
+                      </span>
                     ))}
                   </div>
                 )}
