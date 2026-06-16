@@ -289,10 +289,26 @@ async function debugHtml(req, res) {
     }
 }
 
+// 6. Get AI V2 Stats
+async function getStatsV2(req, res) {
+    const { game } = req.params;
+    if (!['645', '655', '535'].includes(game)) {
+        return res.status(400).json({ error: 'Invalid game type' });
+    }
+    try {
+        const statsService = require('../services/statsService');
+        const stats = await statsService.getGameStats(game);
+        res.json({ success: true, game, data: stats });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+}
+
 module.exports = {
     getLatest,
     scrapeStream,
     createDraw,
     quickFetchDraw,
-    debugHtml
+    debugHtml,
+    getStatsV2
 };

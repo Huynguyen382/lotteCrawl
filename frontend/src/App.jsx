@@ -6,6 +6,7 @@ import DrawTable from './components/DrawTable';
 import MobileCards from './components/MobileCards';
 import StatsPanel from './components/StatsPanel';
 import PredictionPanel from './components/PredictionPanel';
+import PredictionV2Panel from './components/PredictionV2Panel';
 
 function App() {
   const [game, setGame] = useState('645'); // '645' for Mega, '655' for Power
@@ -39,6 +40,9 @@ function App() {
   const [predictionStrategy, setPredictionStrategy] = useState('balanced');
   const [predictionTicketCount, setPredictionTicketCount] = useState(3);
 
+  const [predictionTicketsV2, setPredictionTicketsV2] = useState([]);
+  const [predictionTicketCountV2, setPredictionTicketCountV2] = useState(3);
+
   const logContainerRef = useRef(null);
   const eventSourceRef = useRef(null);
 
@@ -53,6 +57,7 @@ function App() {
   useEffect(() => {
     fetchLatestInfo();
     setPredictionTickets([]); // Reset predicted tickets when game type changes
+    setPredictionTicketsV2([]);
   }, [game]);
 
   const fetchLatestInfo = async () => {
@@ -468,6 +473,22 @@ function App() {
               >
                 Gợi ý số AI
               </button>
+              <button
+                className={`tab-btn ${activeTab === 'prediction-v2' ? 'active' : ''}`}
+                onClick={() => setActiveTab('prediction-v2')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: activeTab === 'prediction-v2' ? 'var(--accent, #e63946)' : 'var(--text-muted, #8d99ae)',
+                  borderBottom: activeTab === 'prediction-v2' ? '2px solid var(--accent, #e63946)' : 'none',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '0.95rem'
+                }}
+              >
+                AI V2 (Scoring)
+              </button>
             </div>
           )}
  
@@ -565,6 +586,15 @@ function App() {
               <StatsPanel 
                 game={game} 
                 visibleResults={visibleResults} 
+              />
+            ) : activeTab === 'prediction-v2' ? (
+              /* AI Prediction V2 panel */
+              <PredictionV2Panel 
+                game={game} 
+                generatedTickets={predictionTicketsV2}
+                setGeneratedTickets={setPredictionTicketsV2}
+                ticketCount={predictionTicketCountV2}
+                setTicketCount={setPredictionTicketCountV2}
               />
             ) : (
               /* AI Prediction panel */
