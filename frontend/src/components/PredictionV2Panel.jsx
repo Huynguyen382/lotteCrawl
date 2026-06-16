@@ -13,9 +13,25 @@ function PredictionV2Panel({
   const [statsConfig, setStatsConfig] = useState(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [error, setError] = useState('');
+  const [searchTicketQuery, setSearchTicketQuery] = useState('');
 
   const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
   const mainLength = game === '535' ? 5 : 6;
+
+  // Filter generated tickets based on query
+  const filteredTickets = generatedTickets.filter((ticket) => {
+    if (!searchTicketQuery.trim()) return true;
+    const parts = searchTicketQuery.toLowerCase().split(/[\s,.-]+/).filter(Boolean);
+    return parts.every((part) => {
+      const partInt = parseInt(part, 10);
+      if (!isNaN(partInt)) {
+        const inMain = ticket.numbers.some(n => parseInt(n, 10) === partInt);
+        const inSpecial = ticket.specialNumber ? parseInt(ticket.specialNumber, 10) === partInt : false;
+        return inMain || inSpecial;
+      }
+      return false;
+    });
+  });
 
   // Fetch AI V2 stats configuration from Backend
   useEffect(() => {
@@ -179,6 +195,7 @@ function PredictionV2Panel({
       }
 
       setGeneratedTickets(finalTickets);
+      setSearchTicketQuery(''); // Reset search query on new generation
       setIsGenerating(false);
     }, 150); // slight delay for animation
   };
@@ -253,9 +270,69 @@ function PredictionV2Panel({
 
       {generatedTickets.length > 0 && (
         <div className="v2-results-area">
-          <h4 className="v2-results-title">Top {ticketCount} Vé Tối Ưu Nhất (Điểm Sinh Tồn Trực Tiếp)</h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <h4 className="v2-results-title" style={{ margin: 0 }}>Top {ticketCount} Vé Tối Ưu Nhất (Điểm Sinh Tồn Trực Tiếp)</h4>
+            
+            {/* Search Filter Box */}
+            <div className="input-group" style={{ position: 'relative', width: '260px' }}>
+              <input
+                type="text"
+                placeholder="Tìm vé chứa số (ví dụ: 05, 12)..."
+                className="input-field"
+                value={searchTicketQuery}
+                onChange={(e) => setSearchTicketQuery(e.target.value)}
+                style={{ paddingLeft: '32px', paddingRight: '28px', height: '32px', fontSize: '0.8rem' }}
+              />
+              <svg 
+                width="14" 
+                height="14" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+                style={{
+                  position: 'absolute',
+                  left: '10px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'var(--text-muted)'
+                }}
+              >
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              {searchTicketQuery && (
+                <button 
+                  onClick={() => setSearchTicketQuery('')}
+                  style={{
+                    position: 'absolute',
+                    right: '8px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    lineHeight: '1'
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          {searchTicketQuery && (
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Tìm thấy <strong>{filteredTickets.length}</strong> / {generatedTickets.length} vé chứa số mong muốn.
+            </div>
+          )}
+
           <div className="v2-ticket-grid">
-            {generatedTickets.map((ticket, index) => (
+            {filteredTickets.map((ticket, index) => (
               <div key={ticket.id} className="glass-panel v2-ticket-card" style={{animationDelay: `${index * 0.05}s`}}>
                 <div className="v2-ticket-header">
                   <div className="v2-ticket-id">Phương án #{ticket.id}</div>

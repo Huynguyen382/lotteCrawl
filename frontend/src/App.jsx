@@ -12,10 +12,9 @@ import PredictionV2Panel from './components/PredictionV2Panel';
 function App() {
   const [game, setGame] = useState('645'); // '645' for Mega, '655' for Power
   const [startDate, setStartDate] = useState(() => {
-    // Default to 30 days ago
+    // Default to the first day of the current year
     const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().split('T')[0];
+    return `${d.getFullYear()}-01-01`;
   });
   const [endDate, setEndDate] = useState(() => {
     // Default to today
