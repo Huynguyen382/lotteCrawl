@@ -97,11 +97,11 @@ function PredictionV2Panel({
 
     // 3. Association Rule (Pairs)
     let foundPair = false;
-    const top10Pairs = config.topPairs.slice(0, 15);
+    const top15Pairs = config.topPairs.slice(0, 15);
     for (let i = 0; i < ticketNums.length; i++) {
       for (let j = i + 1; j < ticketNums.length; j++) {
         const p1 = `${ticketNums[i]}-${ticketNums[j]}`;
-        if (top10Pairs.includes(p1)) {
+        if (top15Pairs.includes(p1)) {
           score += 2;
           foundPair = true;
           reasons.push({ type: 'primary', text: `Cặp tỷ lệ cao [${ticketNums[i]}, ${ticketNums[j]}]` });
@@ -132,6 +132,49 @@ function PredictionV2Panel({
       score += 1;
     } else {
       score -= 2;
+    }
+
+    // 6. Low/High Balance Rule (Quy luật Cao/Thấp thực tế)
+    const midPoint = game === '645' ? 23 : (game === '655' ? 28 : 18);
+    const lowCount = ticketNums.filter(n => n < midPoint).length;
+    const highCount = ticketNums.length - lowCount;
+    const isLowHighBalanced = (mainLength === 6 && lowCount >= 2 && lowCount <= 4) || (mainLength === 5 && lowCount >= 2 && lowCount <= 3);
+    if (isLowHighBalanced) {
+      score += 1;
+    } else if (lowCount === 0 || highCount === 0) {
+      score -= 2;
+    }
+
+    // 7. Prime Number Rule (Quy luật Số Nguyên Tố)
+    const primes = new Set([2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]);
+    const primeCount = ticketNums.filter(n => primes.has(n)).length;
+    if (primeCount >= 1 && primeCount <= 3) {
+      score += 1;
+    } else if (primeCount === 0) {
+      score -= 1;
+    }
+
+    // 8. Tail Digit Repetition Rule (Quy luật Đuôi số đối xứng)
+    const tails = ticketNums.map(n => n % 10);
+    const tailCounts = {};
+    tails.forEach(t => { tailCounts[t] = (tailCounts[t] || 0) + 1; });
+    const maxTailRep = Math.max(...Object.values(tailCounts));
+    if (maxTailRep === 2) {
+      score += 1;
+      reasons.push({ type: 'success', text: 'Nhịp đuôi đối xứng' });
+    } else if (maxTailRep >= 4) {
+      score -= 3;
+    }
+
+    // 9. Spread Spread Range Check (Khoảng giãn cách bộ số)
+    const minVal = ticketNums[0];
+    const maxVal = ticketNums[ticketNums.length - 1];
+    const spread = maxVal - minVal;
+    const minSpread = game === '645' ? 20 : (game === '655' ? 25 : 15);
+    if (spread >= minSpread) {
+      score += 1;
+    } else {
+      score -= 3;
     }
 
     return { score, reasons };
@@ -169,8 +212,8 @@ function PredictionV2Panel({
             while (candidates[i].nums.includes(r)) r = Math.floor(Math.random() * 55) + 1;
             specialStr = String(r).padStart(2, '0');
           } else if (game === '535') {
-            let r = Math.floor(Math.random() * 35) + 1;
-            while (candidates[i].nums.includes(r)) r = Math.floor(Math.random() * 35) + 1;
+            // Lotto 5/35 số đặc biệt từ 01-12 (EuroMillions/Lucky Star style)
+            let r = Math.floor(Math.random() * 12) + 1;
             specialStr = String(r).padStart(2, '0');
           }
 
@@ -336,9 +379,9 @@ function PredictionV2Panel({
               <div key={ticket.id} className="glass-panel v2-ticket-card" style={{animationDelay: `${index * 0.05}s`}}>
                 <div className="v2-ticket-header">
                   <div className="v2-ticket-id">Phương án #{ticket.id}</div>
-                  <div className={`v2-score-badge ${ticket.score >= 7 ? 'super-high' : ticket.score >= 5 ? 'high' : 'medium'}`}>
+                  <div className={`v2-score-badge ${ticket.score >= 10 ? 'super-high' : ticket.score >= 8 ? 'high' : 'medium'}`}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                    Điểm AI: {ticket.score}/9
+                    Điểm AI: {ticket.score}/13
                   </div>
                 </div>
 
