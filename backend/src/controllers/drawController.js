@@ -303,11 +303,128 @@ async function getStatsV2(req, res) {
         res.status(500).json({ error: e.message });
     }
 }
+// 7. Get list of draws
+async function getDraws(req, res) {
+    const { game } = req.params;
+    const limit = parseInt(req.query.limit, 10) || 100;
+    const offset = parseInt(req.query.offset, 10) || 0;
+    
+    if (!game || !['645', '655', '535'].includes(game)) {
+        return res.status(400).json({ error: 'Game type must be 645, 655 or 535' });
+    }
+    
+    try {
+        if (db.isPostgres()) {
+            const result = await db.query(
+                `SELECT draw_id as "drawId", draw_id_str as "drawIdStr", date_str as "dateStr", date_ymd as "dateYmd", numbers, prizes, scraped_at as "scrapedAt"
+                 FROM draw_results
+                 WHERE game = $1
+                 ORDER BY draw_id DESC
+                 LIMIT $2 OFFSET $3`,
+                [game, limit, offset]
+            );
+            return res.json(result.rows);
+        } else {
+            const gameCache = db.getLocalCache()[game] || {};
+            const draws = Object.values(gameCache)
+                .sort((a, b) => b.drawId - a.drawId)
+                .slice(offset, offset + limit);
+            return res.json(draws);
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+}
+
+// 8. Get single draw
+async function getDrawOne(req, res) {
+    const { game, drawId } = req.params;
+    const id = parseInt(drawId, 10);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'Draw ID must be a valid number' });
+    }
+    try {
+        const draw = await db.getDraw(game, id);
+        if (draw) {
+            return res.json(draw);
+        }
+        res.status(404).json({ error: `Not found draw #${id} for game ${game}` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+}
+
+// 9. Update existing draw
+async function updateDraw(req, res) {
+    const { game, drawId } = req.params;
+    const { dateStr, numbers, prizes } = req.body;
+    const id = parseInt(drawId, 10);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'Draw ID must be a valid number' });
+    }
+    if (!dateStr || !numbers || !prizes) {
+        return res.status(400).json({ error: 'Thiếu thông tin bắt buộc (dateStr, numbers, prizes)' });
+    }
+    
+    try {
+        const existing = await db.getDraw(game, id);
+        if (!existing) {
+            return res.status(404).json({ error: `Not found draw #${id} for game ${game} to update` });
+        }
+
+        const drawObj = {
+            drawId: id,
+            drawIdStr: String(id).padStart(5, '0'),
+            dateStr,
+            dateYmd: dateToYmd(dateStr),
+            numbers: Array.isArray(numbers) ? numbers.map(String) : [],
+            prizes,
+            scrapedAt: existing.scrapedAt || new Date().toISOString()
+        };
+
+        const success = await db.saveDraw(game, drawObj);
+        if (success) {
+            return res.json({ success: true, message: `Cập nhật kỳ quay #${id} thành công!`, data: drawObj });
+        } else {
+            return res.status(500).json({ error: 'Không thể cập nhật cơ sở dữ liệu' });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+}
+
+// 10. Delete draw
+async function deleteDraw(req, res) {
+    const { game, drawId } = req.params;
+    const id = parseInt(drawId, 10);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'Draw ID must be a valid number' });
+    }
+    try {
+        const existing = await db.getDraw(game, id);
+        if (!existing) {
+            return res.status(404).json({ error: `Not found draw #${id} for game ${game} to delete` });
+        }
+        
+        const success = await db.deleteDraw(game, id);
+        if (success) {
+            res.json({ success: true, message: `Xóa kỳ quay #${id} thành công!` });
+        } else {
+            res.status(500).json({ error: 'Không thể xóa dữ liệu' });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+}
 
 module.exports = {
     getLatest,
     scrapeStream,
+    getDraws,
+    getDrawOne,
     createDraw,
+    updateDraw,
+    deleteDraw,
     quickFetchDraw,
     debugHtml,
     getStatsV2

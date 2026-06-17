@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { API_BASE } from '../config';
 
 function ManagementPanel({ fetchLatestInfo, onSuccess }) {
-  const [mgmtTab, setMgmtTab] = useState('quick'); // 'quick' or 'manual'
+  const [mgmtTab, setMgmtTab] = useState('quick'); // 'quick', 'manual', or 'list'
   const [mgmtGame, setMgmtGame] = useState('645');
   const [mgmtDrawId, setMgmtDrawId] = useState('');
   const [mgmtDate, setMgmtDate] = useState('');
@@ -16,6 +16,135 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
   const [mgmtG3Count, setMgmtG3Count] = useState('0');
   const [isSubmittingMgmt, setIsSubmittingMgmt] = useState(false);
   const [mgmtMsg, setMgmtMsg] = useState({ text: '', type: '' });
+
+  // CRUD states
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingDrawId, setEditingDrawId] = useState(null);
+  const [dbDraws, setDbDraws] = useState([]);
+  const [isLoadingList, setIsLoadingList] = useState(false);
+
+  const fetchDbDraws = async () => {
+    setIsLoadingList(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/draws/${mgmtGame}?limit=50`);
+      if (response.ok) {
+        const data = await response.json();
+        setDbDraws(data);
+      } else {
+        setMgmtMsg({ text: 'Không thể tải danh sách kỳ quay từ database.', type: 'error' });
+      }
+    } catch (err) {
+      setMgmtMsg({ text: `Lỗi tải danh sách: ${err.message}`, type: 'error' });
+    } finally {
+      setIsLoadingList(false);
+    }
+  };
+
+  useEffect(() => {
+    if (mgmtTab === 'list') {
+      fetchDbDraws();
+    }
+  }, [mgmtTab, mgmtGame]);
+
+  const handleStartEdit = (draw) => {
+    setIsEditing(true);
+    setEditingDrawId(draw.drawId);
+    setMgmtDrawId(String(draw.drawId));
+    
+    // Parse date from DD/MM/YYYY to YYYY-MM-DD for date input
+    if (draw.dateStr) {
+      const parts = draw.dateStr.split('/');
+      if (parts.length === 3) {
+        setMgmtDate(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+      }
+    }
+    
+    // Set numbers
+    const numCount = mgmtGame === '655' ? 7 : 6;
+    const newNums = Array(7).fill('');
+    for (let i = 0; i < numCount; i++) {
+      newNums[i] = draw.numbers[i] || '';
+    }
+    setMgmtNumbers(newNums);
+    
+    // Set prizes
+    if (mgmtGame === '645') {
+      const jp = draw.prizes.find(p => p.name.toLowerCase().includes('jackpot')) || {};
+      const g1 = draw.prizes.find(p => p.name.includes('Nhất')) || {};
+      const g2 = draw.prizes.find(p => p.name.includes('Nhì')) || {};
+      const g3 = draw.prizes.find(p => p.name.includes('Ba')) || {};
+      
+      setMgmtJackpotCount(String(jp.count || 0));
+      setMgmtJackpotValue(String(jp.value || 0));
+      setMgmtG1Count(String(g1.count || 0));
+      setMgmtG2Count(String(g2.count || 0));
+      setMgmtG3Count(String(g3.count || 0));
+    } else if (mgmtGame === '655') {
+      const jp1 = draw.prizes.find(p => p.name.includes('Jackpot 1')) || {};
+      const jp2 = draw.prizes.find(p => p.name.includes('Jackpot 2')) || {};
+      const g1 = draw.prizes.find(p => p.name.includes('Nhất')) || {};
+      const g2 = draw.prizes.find(p => p.name.includes('Nhì')) || {};
+      const g3 = draw.prizes.find(p => p.name.includes('Ba')) || {};
+      
+      setMgmtJackpotCount(String(jp1.count || 0));
+      setMgmtJackpotValue(String(jp1.value || 0));
+      setMgmtJackpot2Count(String(jp2.count || 0));
+      setMgmtJackpot2Value(String(jp2.value || 0));
+      setMgmtG1Count(String(g1.count || 0));
+      setMgmtG2Count(String(g2.count || 0));
+      setMgmtG3Count(String(g3.count || 0));
+    } else if (mgmtGame === '535') {
+      const jp = draw.prizes.find(p => p.name.includes('Giải Độc Đắc')) || draw.prizes.find(p => p.name.includes('Độc Đắc')) || {};
+      const g1 = draw.prizes.find(p => p.name.includes('Nhất')) || {};
+      const g2 = draw.prizes.find(p => p.name.includes('Nhì')) || {};
+      const g3 = draw.prizes.find(p => p.name.includes('Ba')) || {};
+      
+      setMgmtJackpotCount(String(jp.count || 0));
+      setMgmtJackpotValue(String(jp.value || 0));
+      setMgmtG1Count(String(g1.count || 0));
+      setMgmtG2Count(String(g2.count || 0));
+      setMgmtG3Count(String(g3.count || 0));
+    }
+    
+    setMgmtTab('manual');
+    setMgmtMsg({ text: `Đang sửa kỳ quay #${draw.drawId}. Hãy chỉnh sửa các trường bên dưới và nhấn Cập nhật.`, type: 'info' });
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditingDrawId(null);
+    setMgmtDrawId('');
+    setMgmtDate('');
+    setMgmtNumbers(Array(7).fill(''));
+    setMgmtJackpotCount('0');
+    setMgmtJackpot2Count('0');
+    setMgmtG1Count('0');
+    setMgmtG2Count('0');
+    setMgmtG3Count('0');
+    setMgmtMsg({ text: '', type: '' });
+  };
+
+  const handleDeleteDraw = async (drawId) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa kỳ quay #${drawId} không?`)) {
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE}/api/draws/${mgmtGame}/${drawId}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setMgmtMsg({ text: data.message || 'Đã xóa thành công!', type: 'success' });
+        fetchDbDraws();
+        fetchLatestInfo();
+        if (onSuccess) onSuccess();
+      } else {
+        setMgmtMsg({ text: data.error || 'Không thể xóa kỳ quay.', type: 'error' });
+      }
+    } catch (err) {
+      setMgmtMsg({ text: `Lỗi kết nối: ${err.message}`, type: 'error' });
+    }
+  };
 
   const handleQuickFetch = async (e) => {
     e.preventDefault();
@@ -200,10 +329,15 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
     }
     
     setIsSubmittingMgmt(true);
-    setMgmtMsg({ text: 'Đang lưu kết quả...', type: 'info' });
+    setMgmtMsg({ text: isEditing ? 'Đang cập nhật kết quả...' : 'Đang lưu kết quả...', type: 'info' });
     try {
-      const response = await fetch(`${API_BASE}/api/draws`, {
-        method: 'POST',
+      const url = isEditing 
+        ? `${API_BASE}/api/draws/${mgmtGame}/${editingDrawId}` 
+        : `${API_BASE}/api/draws`;
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           game: mgmtGame,
@@ -216,6 +350,8 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
       const data = await response.json();
       if (response.ok) {
         setMgmtMsg({ text: data.message || 'Đã lưu thành công!', type: 'success' });
+        setIsEditing(false);
+        setEditingDrawId(null);
         setMgmtDrawId('');
         setMgmtDate('');
         setMgmtNumbers(Array(7).fill(''));
@@ -245,11 +381,11 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
         Quản lý & Nhập liệu kỳ quay
       </h2>
 
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '10px', marginBottom: '10px' }}>
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
         <button
           type="button"
           className={`tab-btn ${mgmtTab === 'quick' ? 'active' : ''}`}
-          onClick={() => { setMgmtTab('quick'); setMgmtMsg({ text: '', type: '' }); }}
+          onClick={() => { setMgmtTab('quick'); setMgmtMsg({ text: '', type: '' }); if(isEditing) handleCancelEdit(); }}
           style={{
             background: 'none',
             border: 'none',
@@ -278,7 +414,24 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
             fontSize: '0.85rem'
           }}
         >
-          Nhập thủ công
+          {isEditing ? `Sửa kỳ quay #${editingDrawId}` : 'Nhập thủ công'}
+        </button>
+        <button
+          type="button"
+          className={`tab-btn ${mgmtTab === 'list' ? 'active' : ''}`}
+          onClick={() => { setMgmtTab('list'); setMgmtMsg({ text: '', type: '' }); if(isEditing) handleCancelEdit(); }}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: mgmtTab === 'list' ? 'var(--accent)' : 'var(--text-muted)',
+            borderBottom: mgmtTab === 'list' ? '2px solid var(--accent)' : 'none',
+            padding: '4px 8px',
+            cursor: 'pointer',
+            fontWeight: '600',
+            fontSize: '0.85rem'
+          }}
+        >
+          Danh sách kỳ quay
         </button>
       </div>
 
@@ -297,7 +450,7 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
         </select>
       </div>
 
-      {mgmtTab === 'quick' ? (
+      {mgmtTab === 'quick' && (
         <form onSubmit={handleQuickFetch}>
           <div className="form-group">
             <label>Mã Kỳ Quay (Draw ID)</label>
@@ -320,7 +473,9 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
             {isSubmittingMgmt ? 'Đang cào...' : 'Tải & Lưu dữ liệu'}
           </button>
         </form>
-      ) : (
+      )}
+
+      {mgmtTab === 'manual' && (
         <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="form-group">
             <label>Mã Kỳ Quay</label>
@@ -330,7 +485,7 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
               placeholder="Ví dụ: 1190"
               value={mgmtDrawId}
               onChange={(e) => setMgmtDrawId(e.target.value)}
-              disabled={isSubmittingMgmt}
+              disabled={isSubmittingMgmt || isEditing}
             />
           </div>
 
@@ -466,15 +621,131 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
             </div>
           </div>
 
-          <button
-            type="submit"
-            className={`btn btn-primary ${isSubmittingMgmt ? 'btn-disabled' : ''}`}
-            disabled={isSubmittingMgmt}
-            style={{ width: '100%', marginTop: '8px' }}
-          >
-            {isSubmittingMgmt ? 'Đang lưu...' : 'Lưu kết quả'}
-          </button>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+            <button
+              type="submit"
+              className={`btn btn-primary ${isSubmittingMgmt ? 'btn-disabled' : ''}`}
+              disabled={isSubmittingMgmt}
+              style={{ flex: 1 }}
+            >
+              {isSubmittingMgmt ? 'Đang xử lý...' : isEditing ? 'Cập nhật' : 'Lưu kết quả'}
+            </button>
+            {isEditing && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleCancelEdit}
+                style={{ flex: 1 }}
+              >
+                Hủy bỏ
+              </button>
+            )}
+          </div>
         </form>
+      )}
+
+      {mgmtTab === 'list' && (
+        <div style={{ marginTop: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              50 kỳ quay gần nhất trong database:
+            </span>
+            <button 
+              type="button" 
+              onClick={fetchDbDraws} 
+              className="btn btn-secondary" 
+              style={{ padding: '2px 8px', fontSize: '0.75rem', height: '24px' }}
+              disabled={isLoadingList}
+            >
+              🔄 Tải lại
+            </button>
+          </div>
+          
+          {isLoadingList ? (
+            <div style={{ textAlign: 'center', padding: '20px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Đang tải danh sách...
+            </div>
+          ) : dbDraws.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px', fontSize: '0.85rem', color: 'var(--text-muted)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '8px' }}>
+              Chưa có dữ liệu nào trong database.
+            </div>
+          ) : (
+            <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', background: 'rgba(0,0,0,0.2)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
+                    <th style={{ padding: '6px 8px' }}>Kỳ</th>
+                    <th style={{ padding: '6px 8px' }}>Ngày</th>
+                    <th style={{ padding: '6px 8px' }}>Bộ Số</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dbDraws.map((draw) => (
+                    <tr key={draw.drawId} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                      <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>#{draw.drawId}</td>
+                      <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{draw.dateStr}</td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+                          {draw.numbers.map((n, idx) => {
+                            const isBonus = (mgmtGame === '655' && idx === 6) || (mgmtGame === '535' && idx === 5);
+                            return (
+                              <span 
+                                key={idx} 
+                                style={{ 
+                                  padding: '1px 4px', 
+                                  borderRadius: '4px', 
+                                  background: isBonus ? 'rgba(255, 183, 3, 0.2)' : 'rgba(255,255,255,0.08)',
+                                  color: isBonus ? 'var(--warning)' : 'white',
+                                  fontSize: '0.75rem',
+                                  border: isBonus ? '1px solid rgba(255, 183, 3, 0.4)' : 'none'
+                                }}
+                              >
+                                {n}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                        <button 
+                          type="button"
+                          onClick={() => handleStartEdit(draw)}
+                          style={{
+                            background: 'rgba(74, 150, 236, 0.15)',
+                            border: '1px solid rgba(74, 150, 236, 0.3)',
+                            color: '#4a96ec',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.7rem'
+                          }}
+                        >
+                          Sửa
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => handleDeleteDraw(draw.drawId)}
+                          style={{
+                            background: 'rgba(230, 57, 70, 0.15)',
+                            border: '1px solid rgba(230, 57, 70, 0.3)',
+                            color: 'var(--error)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.7rem'
+                          }}
+                        >
+                          Xóa
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
 
       {mgmtMsg.text && (

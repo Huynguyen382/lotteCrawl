@@ -333,6 +333,45 @@ async function saveDraw(game, draw) {
     }
 }
 
+async function deleteDraw(game, drawId) {
+    const id = parseInt(drawId, 10);
+    if (usePostgres && pool) {
+        try {
+            await pool.query(
+                'DELETE FROM draw_results WHERE game = $1 AND draw_id = $2',
+                [game, id]
+            );
+            if (onlinePool) {
+                onlinePool.query(
+                    'DELETE FROM draw_results WHERE game = $1 AND draw_id = $2',
+                    [game, id]
+                ).catch(err => {
+                    console.error(`[db-sync] Background delete error for draw ${game} #${id}:`, err.message);
+                });
+            }
+            return true;
+        } catch (error) {
+            console.error(`[db] Error deleting draw ${game} #${id}:`, error.message);
+            return false;
+        }
+    } else {
+        if (localCache[game] && localCache[game][id]) {
+            delete localCache[game][id];
+            saveLocalCache();
+            if (onlinePool) {
+                onlinePool.query(
+                    'DELETE FROM draw_results WHERE game = $1 AND draw_id = $2',
+                    [game, id]
+                ).catch(err => {
+                    console.error(`[db-sync] Background delete error for draw ${game} #${id}:`, err.message);
+                });
+            }
+            return true;
+        }
+        return false;
+    }
+}
+
 async function getLatestDraw(game) {
     if (usePostgres && pool) {
         try {
@@ -415,6 +454,7 @@ module.exports = {
     query,
     getDraw,
     saveDraw,
+    deleteDraw,
     getLatestDraw,
     getDrawsInRange,
     getAllDrawsMetadata,
