@@ -146,6 +146,138 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
     }
   };
 
+  const parseRawText = (text, currentMgmtGame) => {
+    let drawId = '';
+    let dateVal = ''; // YYYY-MM-DD
+    let numbers = Array(7).fill('');
+    let detectedGame = currentMgmtGame;
+
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    
+    // Find header info
+    lines.forEach(line => {
+      const drawMatch = line.match(/#(\d+)/) || line.match(/Kỳ quay thưởng\s+#?(\d+)/i) || line.match(/Kỳ\s+(\d+)/i);
+      if (drawMatch) {
+        drawId = drawMatch[1];
+      }
+      const dateMatch = line.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      if (dateMatch) {
+        dateVal = `${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`;
+      }
+    });
+
+    // Find numbers line (exclude header lines)
+    const numLine = lines.find(line => {
+      // A line that contains digits, and doesn't contain "Kỳ" or "ngày"
+      return /\d/.test(line) && !/kỳ|ngày|thưởng/i.test(line);
+    });
+
+    if (numLine) {
+      // Parse numbers line
+      let mainPart = numLine;
+      let specialPart = '';
+
+      if (numLine.includes('|')) {
+        const parts = numLine.split('|');
+        mainPart = parts[0].trim();
+        specialPart = parts[1].trim();
+      }
+
+      // Helper to extract 2-digit tokens from a string
+      const extractTokens = (str) => {
+        const rawTokens = str.split(/[^\d]+/).filter(Boolean);
+        const tokens = [];
+        rawTokens.forEach(t => {
+          if (t.length >= 4 && t.length % 2 === 0) {
+            // Split long concatenated digits like 1214181933 into 2-digit chunks
+            for (let i = 0; i < t.length; i += 2) {
+              tokens.push(t.substring(i, i + 2));
+            }
+          } else {
+            tokens.push(t);
+          }
+        });
+        return tokens;
+      };
+
+      const mainNums = extractTokens(mainPart);
+      const specialNums = specialPart ? extractTokens(specialPart) : [];
+
+      if (specialNums.length > 0) {
+        // Has special number
+        if (mainNums.length === 5) {
+          detectedGame = '535';
+          numbers[0] = mainNums[0] || '';
+          numbers[1] = mainNums[1] || '';
+          numbers[2] = mainNums[2] || '';
+          numbers[3] = mainNums[3] || '';
+          numbers[4] = mainNums[4] || '';
+          numbers[5] = specialNums[0] || '';
+        } else if (mainNums.length === 6) {
+          detectedGame = '655';
+          numbers[0] = mainNums[0] || '';
+          numbers[1] = mainNums[1] || '';
+          numbers[2] = mainNums[2] || '';
+          numbers[3] = mainNums[3] || '';
+          numbers[4] = mainNums[4] || '';
+          numbers[5] = mainNums[5] || '';
+          numbers[6] = specialNums[0] || '';
+        }
+      } else {
+        // No pipe
+        if (mainNums.length === 6) {
+          // Check if any number > 35
+          const hasHighNum = mainNums.some(n => parseInt(n, 10) > 35);
+          if (hasHighNum) {
+            detectedGame = '645';
+            mainNums.forEach((n, idx) => { if (idx < 6) numbers[idx] = n; });
+          } else {
+            detectedGame = currentMgmtGame === '535' ? '535' : '645';
+            if (detectedGame === '535') {
+              numbers[0] = mainNums[0] || '';
+              numbers[1] = mainNums[1] || '';
+              numbers[2] = mainNums[2] || '';
+              numbers[3] = mainNums[3] || '';
+              numbers[4] = mainNums[4] || '';
+              numbers[5] = mainNums[5] || '';
+            } else {
+              mainNums.forEach((n, idx) => { if (idx < 6) numbers[idx] = n; });
+            }
+          }
+        } else if (mainNums.length === 7) {
+          detectedGame = '655';
+          mainNums.forEach((n, idx) => { if (idx < 7) numbers[idx] = n; });
+        }
+      }
+    }
+
+    return { drawId, dateVal, numbers, detectedGame };
+  };
+
+  const handleRawPaste = (e) => {
+    const text = e.target.value;
+    if (!text.trim()) return;
+    
+    const { drawId, dateVal, numbers, detectedGame } = parseRawText(text, mgmtGame);
+    
+    if (drawId) setMgmtDrawId(drawId);
+    if (dateVal) setMgmtDate(dateVal);
+    if (detectedGame) setMgmtGame(detectedGame);
+    
+    // Fill numbers
+    const newNums = [...mgmtNumbers];
+    const numCount = detectedGame === '655' ? 7 : 6;
+    for (let i = 0; i < numCount; i++) {
+      newNums[i] = numbers[i] || '';
+    }
+    setMgmtNumbers(newNums);
+    
+    setMgmtMsg({ text: `Đã tự động nhận diện và phân tích: ${detectedGame === '645' ? 'Mega 6/45' : detectedGame === '655' ? 'Power 6/55' : 'Lotto 5/35'} - Kỳ #${drawId || '?'}.`, type: 'success' });
+    
+    // Clear textarea value to allow subsequent pastes
+    e.target.value = '';
+  };
+
   const handleQuickFetch = async (e) => {
     e.preventDefault();
     if (!mgmtDrawId) {
@@ -477,6 +609,21 @@ function ManagementPanel({ fetchLatestInfo, onSuccess }) {
 
       {mgmtTab === 'manual' && (
         <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Nhập nhanh bằng cách Paste text */}
+          <div className="form-group" style={{ marginBottom: '14px', border: '1px dashed rgba(255,255,255,0.12)', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.01)' }}>
+            <label style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', color: 'var(--accent)', fontWeight: 'bold' }}>
+              <span>Dán (Paste) nội dung sao chép</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>(Tự phân tách loại vé, kỳ quay, ngày, bộ số)</span>
+            </label>
+            <textarea
+              rows="2"
+              className="input-field"
+              style={{ height: '55px', fontSize: '0.75rem', marginTop: '6px', resize: 'none', padding: '6px 10px', background: 'rgba(0,0,0,0.2)' }}
+              placeholder="Dán nội dung sao chép vào đây...&#10;Ví dụ: Kỳ quay thưởng #00708 ngày 17/06/2026&#10;1214181933|06"
+              onChange={handleRawPaste}
+            />
+          </div>
+
           <div className="form-group">
             <label>Mã Kỳ Quay</label>
             <input
