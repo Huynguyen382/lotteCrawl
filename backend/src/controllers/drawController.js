@@ -108,7 +108,7 @@ async function scrapeStream(req, res) {
         sendEvent('start', { startId, endId, totalDraws });
 
         const results = [];
-        const CONCURRENCY = 5;
+        const CONCURRENCY = 4;
         const queue = [];
         
         const hasPrev = startId > 1;
@@ -147,10 +147,15 @@ async function scrapeStream(req, res) {
             }
         };
         
-        while (queue.length > 0) {
-            const batch = queue.splice(0, CONCURRENCY);
-            await Promise.all(batch.map(id => fetchOne(id)));
-        }
+        let index = 0;
+        const worker = async () => {
+            while (index < queue.length) {
+                const id = queue[index++];
+                await fetchOne(id);
+            }
+        };
+        const workers = Array(Math.min(CONCURRENCY, queue.length)).fill(null).map(worker);
+        await Promise.all(workers);
 
         results.sort((a, b) => a.drawId - b.drawId);
 

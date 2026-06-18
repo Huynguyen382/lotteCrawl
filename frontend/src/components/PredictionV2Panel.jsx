@@ -14,9 +14,17 @@ function PredictionV2Panel({
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [error, setError] = useState('');
   const [searchTicketQuery, setSearchTicketQuery] = useState('');
+  const [generateProgress, setGenerateProgress] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
 
   const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
   const mainLength = game === '535' ? 5 : 6;
+
+  // Reset page number on filter/game/results change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTicketQuery, generatedTickets.length, game]);
 
   // Filter generated tickets based on query
   const filteredTickets = generatedTickets.filter((ticket) => {
@@ -32,6 +40,9 @@ function PredictionV2Panel({
       return false;
     });
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / pageSize));
+  const paginatedTickets = filteredTickets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Fetch AI V2 stats configuration from Backend
   useEffect(() => {
@@ -183,64 +194,77 @@ function PredictionV2Panel({
   const handleGenerateV2 = () => {
     if (!statsConfig) return;
     setIsGenerating(true);
+    setGenerateProgress(0);
+    setGeneratedTickets([]);
 
-    setTimeout(() => {
-      const NUM_CANDIDATES = 10000;
-      const candidates = [];
+    const numCandidates = Math.max(10000, Math.floor(ticketCount * 1.15));
+    const candidates = [];
+    const CHUNK_SIZE = 10000;
 
-      for (let i = 0; i < NUM_CANDIDATES; i++) {
+    const generateChunk = () => {
+      const target = Math.min(numCandidates, candidates.length + CHUNK_SIZE);
+      
+      while (candidates.length < target) {
         const nums = generateRandomTicket();
         const { score, reasons } = scoreTicket(nums, statsConfig);
         candidates.push({ nums, score, reasons });
       }
 
-      // Sort descending by score
-      candidates.sort((a, b) => b.score - a.score);
+      setGenerateProgress(candidates.length);
 
-      // Select top unique ones
-      const finalTickets = [];
-      const seenSignatures = new Set();
-      
-      for (let i = 0; i < candidates.length && finalTickets.length < ticketCount; i++) {
-        const sig = candidates[i].nums.join('-');
-        if (!seenSignatures.has(sig)) {
-          seenSignatures.add(sig);
-          
-          let specialStr = null;
-          if (game === '655') {
-            let r = Math.floor(Math.random() * 55) + 1;
-            while (candidates[i].nums.includes(r)) r = Math.floor(Math.random() * 55) + 1;
-            specialStr = String(r).padStart(2, '0');
-          } else if (game === '535') {
-            // Lotto 5/35 số đặc biệt từ 01-12 (EuroMillions/Lucky Star style)
-            let r = Math.floor(Math.random() * 12) + 1;
-            specialStr = String(r).padStart(2, '0');
-          }
+      if (candidates.length < numCandidates) {
+        setTimeout(generateChunk, 0);
+      } else {
+        // Sort descending by score
+        candidates.sort((a, b) => b.score - a.score);
 
-          // Filter unique reasons
-          const uniqueReasons = [];
-          const seenReasonTexts = new Set();
-          candidates[i].reasons.forEach(r => {
-            if (!seenReasonTexts.has(r.text)) {
-              seenReasonTexts.add(r.text);
-              uniqueReasons.push(r);
+        // Select top unique ones
+        const finalTickets = [];
+        const seenSignatures = new Set();
+        
+        for (let i = 0; i < candidates.length && finalTickets.length < ticketCount; i++) {
+          const sig = candidates[i].nums.join('-');
+          if (!seenSignatures.has(sig)) {
+            seenSignatures.add(sig);
+            
+            let specialStr = null;
+            if (game === '655') {
+              let r = Math.floor(Math.random() * 55) + 1;
+              while (candidates[i].nums.includes(r)) r = Math.floor(Math.random() * 55) + 1;
+              specialStr = String(r).padStart(2, '0');
+            } else if (game === '535') {
+              // Lotto 5/35 số đặc biệt từ 01-12 (EuroMillions/Lucky Star style)
+              let r = Math.floor(Math.random() * 12) + 1;
+              specialStr = String(r).padStart(2, '0');
             }
-          });
 
-          finalTickets.push({
-            id: finalTickets.length + 1,
-            numbers: candidates[i].nums.map(n => String(n).padStart(2, '0')),
-            specialNumber: specialStr,
-            score: candidates[i].score,
-            reasons: uniqueReasons
-          });
+            // Filter unique reasons
+            const uniqueReasons = [];
+            const seenReasonTexts = new Set();
+            candidates[i].reasons.forEach(r => {
+              if (!seenReasonTexts.has(r.text)) {
+                seenReasonTexts.add(r.text);
+                uniqueReasons.push(r);
+              }
+            });
+
+            finalTickets.push({
+              id: finalTickets.length + 1,
+              numbers: candidates[i].nums.map(n => String(n).padStart(2, '0')),
+              specialNumber: specialStr,
+              score: candidates[i].score,
+              reasons: uniqueReasons
+            });
+          }
         }
-      }
 
-      setGeneratedTickets(finalTickets);
-      setSearchTicketQuery(''); // Reset search query on new generation
-      setIsGenerating(false);
-    }, 150); // slight delay for animation
+        setGeneratedTickets(finalTickets);
+        setSearchTicketQuery(''); // Reset search query on new generation
+        setIsGenerating(false);
+      }
+    };
+
+    setTimeout(generateChunk, 0);
   };
 
   return (
@@ -258,7 +282,7 @@ function PredictionV2Panel({
 
       <div className="glass-panel v2-control-panel">
         <p className="v2-description">
-          Thuật toán V2 quét và đánh giá <strong>10,000 vé ngẫu nhiên</strong> theo các quy luật thực tế: Điểm rơi Toán Học, Tần suất Chẵn/Lẻ, và Ma trận Liên kết. 
+          Thuật toán V2 quét và đánh giá <strong>{Math.max(10000, Math.floor(ticketCount * 1.15)).toLocaleString()} vé ngẫu nhiên</strong> theo các quy luật thực tế: Điểm rơi Toán Học, Tần suất Chẵn/Lẻ, và Ma trận Liên kết. 
         </p>
 
         {error && <div className="v2-error-banner"><i className="fas fa-exclamation-triangle"></i> {error}</div>}
@@ -269,9 +293,9 @@ function PredictionV2Panel({
             <div className="v2-input-wrapper">
               <input 
                 type="number" 
-                min="1" max="100" 
+                min="1" max="1000000" 
                 value={ticketCount}
-                onChange={(e) => setTicketCount(Math.max(1, parseInt(e.target.value) || 1))}
+                onChange={(e) => setTicketCount(Math.max(1, Math.min(1000000, parseInt(e.target.value) || 1)))}
               />
               <span className="v2-input-suffix">Vé</span>
             </div>
@@ -283,7 +307,7 @@ function PredictionV2Panel({
             disabled={isGenerating || isLoadingStats || !statsConfig}
           >
             {isGenerating ? (
-              <><span className="v2-spinner"></span> Đang chấm điểm 10,000 vé...</>
+              <><span className="v2-spinner"></span> Đang chấm điểm {generateProgress.toLocaleString()} / {Math.max(10000, Math.floor(ticketCount * 1.15)).toLocaleString()} ứng viên...</>
             ) : isLoadingStats ? (
               <><span className="v2-spinner"></span> Đang nạp {game} model...</>
             ) : (
@@ -314,7 +338,7 @@ function PredictionV2Panel({
       {generatedTickets.length > 0 && (
         <div className="v2-results-area">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-            <h4 className="v2-results-title" style={{ margin: 0 }}>Top {ticketCount} Vé Tối Ưu Nhất (Điểm Sinh Tồn Trực Tiếp)</h4>
+            <h4 className="v2-results-title" style={{ margin: 0 }}>Top {ticketCount.toLocaleString()} Vé Tối Ưu Nhất (Điểm Sinh Tồn Trực Tiếp)</h4>
             
             {/* Search Filter Box */}
             <div className="input-group" style={{ position: 'relative', width: '260px' }}>
@@ -370,13 +394,13 @@ function PredictionV2Panel({
 
           {searchTicketQuery && (
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Tìm thấy <strong>{filteredTickets.length}</strong> / {generatedTickets.length} vé chứa số mong muốn.
+              Tìm thấy <strong>{filteredTickets.length.toLocaleString()}</strong> / {generatedTickets.length.toLocaleString()} vé chứa số mong muốn.
             </div>
           )}
 
           <div className="v2-ticket-grid">
-            {filteredTickets.map((ticket, index) => (
-              <div key={ticket.id} className="glass-panel v2-ticket-card" style={{animationDelay: `${index * 0.05}s`}}>
+            {paginatedTickets.map((ticket, index) => (
+              <div key={ticket.id} className="glass-panel v2-ticket-card" style={{animationDelay: `${(index % pageSize) * 0.02}s`}}>
                 <div className="v2-ticket-header">
                   <div className="v2-ticket-id">Phương án #{ticket.id}</div>
                   <div className={`v2-score-badge ${ticket.score >= 10 ? 'super-high' : ticket.score >= 8 ? 'high' : 'medium'}`}>
@@ -415,6 +439,95 @@ function PredictionV2Panel({
               </div>
             ))}
           </div>
+
+          {/* Pagination Controls */}
+          {filteredTickets.length > pageSize && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '16px',
+              marginTop: '16px',
+              paddingTop: '16px',
+              borderTop: '1px solid rgba(255, 255, 255, 0.05)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                <span>Hiển thị</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(parseInt(e.target.value, 10));
+                    setCurrentPage(1);
+                  }}
+                  className="select-field"
+                  style={{ width: '80px', height: '32px', padding: '0 8px', margin: 0, fontSize: '0.85rem' }}
+                >
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={500}>500</option>
+                  <option value={1000}>1000</option>
+                </select>
+                <span>vé / trang</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(1)}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 10px', height: '32px', minWidth: '36px', fontSize: '0.85rem', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                >
+                  &lt;&lt;
+                </button>
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 10px', height: '32px', minWidth: '36px', fontSize: '0.85rem', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                >
+                  &lt;
+                </button>
+                
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 8px' }}>
+                  Trang <strong>{currentPage}</strong> / {totalPages}
+                </span>
+
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 10px', height: '32px', minWidth: '36px', fontSize: '0.85rem', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                >
+                  &gt;
+                </button>
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 10px', height: '32px', minWidth: '36px', fontSize: '0.85rem', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                >
+                  &gt;&gt;
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                <span>Đến trang:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={totalPages}
+                  value={currentPage}
+                  onChange={(e) => {
+                    const page = Math.max(1, Math.min(totalPages, parseInt(e.target.value, 10) || 1));
+                    setCurrentPage(page);
+                  }}
+                  className="input-field"
+                  style={{ width: '70px', height: '32px', textAlign: 'center', fontSize: '0.85rem', padding: '0 4px', margin: 0 }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

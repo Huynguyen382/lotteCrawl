@@ -13,9 +13,17 @@ function PredictionPanel({
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiReport, setAiReport] = useState(null);
   const [searchTicketQuery, setSearchTicketQuery] = useState('');
+  const [generateProgress, setGenerateProgress] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
 
   const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
   const mainLength = game === '535' ? 5 : 6;
+
+  // Reset page number on filter/game/results change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTicketQuery, generatedTickets.length, game]);
 
   // Compute Hot and Cold numbers from visible results
   const getFrequencyStats = () => {
@@ -101,27 +109,34 @@ function PredictionPanel({
     setSearchTicketQuery('');
   }, [game, visibleResults]);
 
-  // Handle generation of smart tickets
+  // Handle generation of smart tickets (Async Chunked Generation to prevent UI locking)
   const handleGenerate = () => {
     if (visibleResults.length === 0) return;
     setIsGenerating(true);
+    setGenerateProgress(0);
+    setGeneratedTickets([]);
     
-    setTimeout(() => {
-      const tickets = [];
-      const { hot: hotList, cold: coldList } = getFrequencyStats();
+    const tickets = [];
+    const { hot: hotList, cold: coldList } = getFrequencyStats();
 
-      // Setup parameters based on game type
-      const midPoint = Math.floor(maxNum / 2);
-      let minSum = 115, maxSum = 165; // Mega 6/45 default
-      if (game === '655') {
-        minSum = 135;
-        maxSum = 200;
-      } else if (game === '535') {
-        minSum = 65;
-        maxSum = 115;
-      }
+    // Setup parameters based on game type
+    const midPoint = Math.floor(maxNum / 2);
+    let minSum = 115, maxSum = 165; // Mega 6/45 default
+    if (game === '655') {
+      minSum = 135;
+      maxSum = 200;
+    } else if (game === '535') {
+      minSum = 65;
+      maxSum = 115;
+    }
 
-      for (let t = 0; t < ticketCount; t++) {
+    const CHUNK_SIZE = 5000;
+    let currentCount = 0;
+
+    const generateChunk = () => {
+      const target = Math.min(ticketCount, currentCount + CHUNK_SIZE);
+      
+      for (let t = currentCount; t < target; t++) {
         let ticketNums = [];
         let attempts = 0;
 
@@ -205,15 +220,25 @@ function PredictionPanel({
         }
 
         tickets.push({
+          id: t + 1,
           numbers: ticketNums,
           special: specialNum
         });
       }
 
-      setGeneratedTickets(tickets);
-      setSearchTicketQuery(''); // Reset search query on new generation
-      setIsGenerating(false);
-    }, 1200);
+      currentCount = target;
+      setGenerateProgress(currentCount);
+
+      if (currentCount < ticketCount) {
+        setTimeout(generateChunk, 0);
+      } else {
+        setGeneratedTickets(tickets);
+        setSearchTicketQuery(''); // Reset search query on new generation
+        setIsGenerating(false);
+      }
+    };
+
+    setTimeout(generateChunk, 0);
   };
 
   // Filter generated tickets based on query
@@ -230,6 +255,9 @@ function PredictionPanel({
       return false;
     });
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / pageSize));
+  const paginatedTickets = filteredTickets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   if (visibleResults.length === 0) {
     return (
@@ -320,15 +348,15 @@ function PredictionPanel({
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
           <div className="form-group" style={{ margin: 0 }}>
-            <label>Số lượng vé gợi ý (Nhập từ 1 - 1000)</label>
+            <label>Số lượng vé gợi ý (Từ 1 - 1,000,000)</label>
             <input 
               type="number"
               min="1"
-              max="1000"
+              max="1000000"
               className="input-field"
               value={ticketCount}
               onChange={(e) => {
-                const val = Math.max(1, Math.min(1000, parseInt(e.target.value, 10) || 1));
+                const val = Math.max(1, Math.min(1000000, parseInt(e.target.value, 10) || 1));
                 setTicketCount(val);
               }}
             />
@@ -361,7 +389,7 @@ function PredictionPanel({
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              AI đang tính toán tổ hợp...
+              AI đang sinh bộ số... {generateProgress > 0 && `(${Math.min(100, Math.round((generateProgress / ticketCount) * 100))}% - ${generateProgress.toLocaleString()} vé)`}
             </>
           ) : 'Tạo bộ số gợi ý bằng AI'}
         </button>
@@ -430,15 +458,14 @@ function PredictionPanel({
 
           {searchTicketQuery && (
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Tìm thấy <strong>{filteredTickets.length}</strong> / {generatedTickets.length} vé chứa số mong muốn.
+              Tìm thấy <strong>{filteredTickets.length.toLocaleString()}</strong> / {generatedTickets.length.toLocaleString()} vé chứa số mong muốn.
             </div>
           )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {filteredTickets.map((ticket) => {
-              const originalIdx = generatedTickets.indexOf(ticket);
+            {paginatedTickets.map((ticket) => {
               return (
-                <div key={originalIdx} className="glass-panel" style={{ 
+                <div key={ticket.id} className="glass-panel" style={{ 
                   background: 'rgba(255,255,255,0.01)', 
                   padding: '12px 16px', 
                   display: 'flex', 
@@ -448,7 +475,7 @@ function PredictionPanel({
                   gap: '12px',
                   border: '1px solid rgba(255,255,255,0.03)'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Vé #{originalIdx + 1}</span>
+                  <span style={{ fontWeight: 'bold', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Vé #{ticket.id}</span>
                   
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div className="balls-container" style={{ margin: 0 }}>
@@ -478,6 +505,95 @@ function PredictionPanel({
               </div>
             )}
           </div>
+
+          {/* Pagination Controls */}
+          {filteredTickets.length > pageSize && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '16px',
+              marginTop: '16px',
+              paddingTop: '16px',
+              borderTop: '1px solid rgba(255, 255, 255, 0.05)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                <span>Hiển thị</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(parseInt(e.target.value, 10));
+                    setCurrentPage(1);
+                  }}
+                  className="select-field"
+                  style={{ width: '80px', height: '32px', padding: '0 8px', margin: 0, fontSize: '0.85rem' }}
+                >
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={500}>500</option>
+                  <option value={1000}>1000</option>
+                </select>
+                <span>vé / trang</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(1)}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 10px', height: '32px', minWidth: '36px', fontSize: '0.85rem', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                >
+                  &lt;&lt;
+                </button>
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 10px', height: '32px', minWidth: '36px', fontSize: '0.85rem', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                >
+                  &lt;
+                </button>
+                
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 8px' }}>
+                  Trang <strong>{currentPage}</strong> / {totalPages}
+                </span>
+
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 10px', height: '32px', minWidth: '36px', fontSize: '0.85rem', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                >
+                  &gt;
+                </button>
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 10px', height: '32px', minWidth: '36px', fontSize: '0.85rem', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                >
+                  &gt;&gt;
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                <span>Đến trang:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={totalPages}
+                  value={currentPage}
+                  onChange={(e) => {
+                    const page = Math.max(1, Math.min(totalPages, parseInt(e.target.value, 10) || 1));
+                    setCurrentPage(page);
+                  }}
+                  className="input-field"
+                  style={{ width: '70px', height: '32px', textAlign: 'center', fontSize: '0.85rem', padding: '0 4px', margin: 0 }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
