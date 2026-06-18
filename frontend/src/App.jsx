@@ -185,6 +185,70 @@ function App() {
     return draw.drawId >= scrapedRange.startId && draw.drawId <= scrapedRange.endId;
   });
 
+  const statsConfigV2 = React.useMemo(() => {
+    if (!visibleResults || visibleResults.length === 0) {
+      return {
+        totalDraws: 0,
+        hot: [],
+        cold: [],
+        topPairs: [],
+        sums: { mean: 0, min: 0, max: 0 }
+      };
+    }
+
+    const mainLength = game === '535' ? 5 : 6;
+    let totalDraws = 0;
+    const frequency = {};
+    const pairs = {};
+    const sums = [];
+
+    visibleResults.forEach(draw => {
+      if (!draw.numbers || draw.numbers.length < mainLength) return;
+      
+      const nums = draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10));
+      totalDraws++;
+      
+      nums.forEach(n => {
+        frequency[n] = (frequency[n] || 0) + 1;
+      });
+      
+      const sum = nums.reduce((a, b) => a + b, 0);
+      sums.push(sum);
+      
+      for (let i = 0; i < nums.length; i++) {
+        for (let j = i + 1; j < nums.length; j++) {
+          const n1 = nums[i];
+          const n2 = nums[j];
+          const pKey = n1 < n2 ? `${n1}-${n2}` : `${n2}-${n1}`;
+          pairs[pKey] = (pairs[pKey] || 0) + 1;
+        }
+      }
+    });
+
+    const freqArr = Object.entries(frequency).map(([num, count]) => ({ num: parseInt(num, 10), count }));
+    freqArr.sort((a, b) => b.count - a.count);
+    
+    const hot = freqArr.slice(0, 10).map(x => String(x.num).padStart(2, '0'));
+    const cold = freqArr.slice(-10).map(x => String(x.num).padStart(2, '0'));
+    
+    const pairsArr = Object.entries(pairs).map(([pair, count]) => ({ pair, count }));
+    pairsArr.sort((a, b) => b.count - a.count);
+    const topPairs = pairsArr.slice(0, 50).map(x => x.pair);
+    
+    sums.sort((a, b) => a - b);
+    const sumMean = sums.length > 0 ? Math.round(sums.reduce((a, b) => a + b, 0) / sums.length) : 0;
+    const sumMin = sums[0] || 0;
+    const sumMax = sums[sums.length - 1] || 0;
+
+    return {
+      totalDraws,
+      hot,
+      cold,
+      topPairs,
+      sums: { mean: sumMean, min: sumMin, max: sumMax }
+    };
+  }, [visibleResults, game]);
+
   // Filter results by query
   const filteredResults = visibleResults.filter((draw) => {
     if (!searchQuery.trim()) return true;
@@ -568,11 +632,12 @@ function App() {
                   )}
                 </div>
 
-                {/* Results Table (Desktop view) */}
+                 {/* Results Table (Desktop view) */}
                 <DrawTable 
                   game={game} 
                   filteredResults={filteredResults} 
                   calculateDeltas={calculateDeltas} 
+                  statsConfig={statsConfigV2}
                 />
 
                 {/* Mobile Cards (Mobile view) */}
@@ -580,6 +645,7 @@ function App() {
                   game={game} 
                   filteredResults={filteredResults} 
                   calculateDeltas={calculateDeltas} 
+                  statsConfig={statsConfigV2}
                 />
               </>
             ) : activeTab === 'stats' ? (
@@ -592,6 +658,8 @@ function App() {
               /* AI Prediction V2 panel */
               <PredictionV2Panel 
                 game={game} 
+                visibleResults={visibleResults}
+                statsConfig={statsConfigV2}
                 generatedTickets={predictionTicketsV2}
                 setGeneratedTickets={setPredictionTicketsV2}
                 ticketCount={predictionTicketCountV2}

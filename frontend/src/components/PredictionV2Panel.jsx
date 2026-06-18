@@ -4,21 +4,33 @@ import './PredictionV2Panel.css'; // Sẽ tạo file CSS riêng để tách bi�
 
 function PredictionV2Panel({ 
   game, 
+  visibleResults,
+  statsConfig,
   generatedTickets, 
   setGeneratedTickets, 
   ticketCount, 
   setTicketCount 
 }) {
   const [isGenerating, setIsGenerating] = useState(false);
-  const [statsConfig, setStatsConfig] = useState(null);
-  const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [error, setError] = useState('');
   const [searchTicketQuery, setSearchTicketQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [generateProgress, setGenerateProgress] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
-  const [minScore, setMinScore] = useState(0); // 0 means "Bất kỳ"
+  const [targetScore, setTargetScore] = useState(8); // Default to 8 points
+  const [activeFilters, setActiveFilters] = useState({
+    sum: false,
+    consecutive: false,
+    pairs: false,
+    hotCold: false,
+    oddEven: false,
+    lowHigh: false,
+    prime: false,
+    tail: false,
+    spread: false
+  });
+  const [copyStatusId, setCopyStatusId] = useState(null);
 
   // Debounce search query to avoid heavy filtering on every keystroke
   useEffect(() => {
@@ -153,27 +165,29 @@ function PredictionV2Panel({
     });
   };
 
-  // Fetch AI V2 stats configuration from Backend
+  // Compute average score dynamically from draws in preview data
+  const avgScore = useMemo(() => {
+    if (!visibleResults || visibleResults.length === 0 || !statsConfig) return 8;
+    const mainLength = game === '535' ? 5 : 6;
+    let totalScore = 0;
+    let countedDraws = 0;
+
+    visibleResults.forEach(draw => {
+      if (!draw.numbers || draw.numbers.length < mainLength) return;
+      const nums = draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10)).sort((a, b) => a - b);
+      const { score } = scoreTicket(nums, statsConfig);
+      totalScore += score;
+      countedDraws++;
+    });
+
+    if (countedDraws === 0) return 8;
+    return Math.round(totalScore / countedDraws);
+  }, [visibleResults, statsConfig, game]);
+
+  // Synchronize targetScore when avgScore updates
   useEffect(() => {
-    async function fetchStats() {
-      setIsLoadingStats(true);
-      setError('');
-      try {
-        const response = await fetch(`${API_BASE}/api/stats/v2/${game}`);
-        const data = await response.json();
-        if (data.success && data.data) {
-          setStatsConfig(data.data);
-        } else {
-          setError('Không thể lấy dữ liệu thống kê từ server.');
-        }
-      } catch (err) {
-        setError('Lỗi kết nối server khi tải dữ liệu cấu hình AI V2.');
-      } finally {
-        setIsLoadingStats(false);
-      }
-    }
-    fetchStats();
-  }, [game]);
+    setTargetScore(avgScore);
+  }, [avgScore]);
 
   const generateRandomTicket = () => {
     const nums = new Set();
@@ -185,7 +199,7 @@ function PredictionV2Panel({
     return sorted;
   };
 
-  const scoreTicket = (ticketNums, config) => {
+  function scoreTicket(ticketNums, config) {
     if (!config || !config.sums || !config.topPairs || !config.hot || !config.cold) {
       return { score: 0, reasons: [] };
     }
@@ -235,9 +249,12 @@ function PredictionV2Panel({
     // 4. Hot/Cold frequencies
     let hotCount = 0;
     let coldCount = 0;
+    const hotList = config.hot || [];
+    const coldList = config.cold || [];
     ticketNums.forEach(n => {
-      if (config.hot.slice(0, 8).includes(n)) hotCount++;
-      if (config.cold.slice(0, 5).includes(n)) coldCount++;
+      const nStr = String(n).padStart(2, '0');
+      if (hotList.slice(0, 8).includes(nStr)) hotCount++;
+      if (coldList.slice(0, 5).includes(nStr)) coldCount++;
     });
     
     if (hotCount >= 1 && hotCount <= 3) {
@@ -301,7 +318,7 @@ function PredictionV2Panel({
     }
 
     return { score, reasons };
-  };
+  }
 
   // Handle generation of smart tickets (Parallel Multi-threaded Web Workers to prevent UI locking and boost speed)
   const handleGenerateV2 = () => {
@@ -315,7 +332,7 @@ function PredictionV2Panel({
     // Inline Web Worker script for heuristic candidate evaluation
     const workerCodeV2 = `
       self.onmessage = function(e) {
-        const { count, statsConfig, game, maxNum, mainLength, ticketCount, minScore } = e.data;
+        const { count, statsConfig, game, maxNum, mainLength, ticketCount, targetScore, activeFilters } = e.data;
 
         // Helper functions inside worker
         const generateRandomTicket = () => {
@@ -325,6 +342,90 @@ function PredictionV2Panel({
             nums.add(r);
           }
           return Array.from(nums).sort((a, b) => a - b);
+        };
+
+        const checkTicketFilters = (ticketNums, config, activeFilters) => {
+          if (activeFilters.sum) {
+            const sum = ticketNums.reduce((a, b) => a + b, 0);
+            const mean = config.sums.mean || (game === '645' ? 138 : (game === '655' ? 168 : 90));
+            if (!(sum >= mean - 15 && sum <= mean + 15)) return false;
+          }
+
+          if (activeFilters.consecutive) {
+            let consecutiveCount = 0;
+            for (let i = 0; i < ticketNums.length - 1; i++) {
+              if (ticketNums[i + 1] - ticketNums[i] === 1) consecutiveCount++;
+            }
+            if (!(consecutiveCount === 1 || consecutiveCount === 2)) return false;
+          }
+
+          if (activeFilters.pairs) {
+            let foundPair = false;
+            const top15Pairs = config.topPairs ? config.topPairs.slice(0, 15) : [];
+            for (let i = 0; i < ticketNums.length; i++) {
+              for (let j = i + 1; j < ticketNums.length; j++) {
+                const p1 = ticketNums[i] + '-' + ticketNums[j];
+                if (top15Pairs.includes(p1)) {
+                  foundPair = true;
+                  break;
+                }
+              }
+              if (foundPair) break;
+            }
+            if (!foundPair) return false;
+          }
+
+          if (activeFilters.hotCold) {
+            let hotCount = 0;
+            let coldCount = 0;
+            const hotList = config.hot || [];
+            const coldList = config.cold || [];
+            ticketNums.forEach(n => {
+              const nStr = String(n).padStart(2, '0');
+              if (hotList.slice(0, 8).includes(nStr)) hotCount++;
+              if (coldList.slice(0, 5).includes(nStr)) coldCount++;
+            });
+            const isHotColdSatisfied = (hotCount >= 1 && hotCount <= 3) || coldCount === 1;
+            if (!isHotColdSatisfied) return false;
+          }
+
+          if (activeFilters.oddEven) {
+            const oddCount = ticketNums.filter(n => n % 2 !== 0).length;
+            const isBalanced = (mainLength === 6 && oddCount >= 2 && oddCount <= 4) || (mainLength === 5 && oddCount >= 2 && oddCount <= 3);
+            if (!isBalanced) return false;
+          }
+
+          if (activeFilters.lowHigh) {
+            const midPoint = game === '645' ? 23 : (game === '655' ? 28 : 18);
+            const lowCount = ticketNums.filter(n => n < midPoint).length;
+            const highCount = ticketNums.length - lowCount;
+            const isLowHighBalanced = (mainLength === 6 && lowCount >= 2 && lowCount <= 4) || (mainLength === 5 && lowCount >= 2 && lowCount <= 3);
+            if (!isLowHighBalanced) return false;
+          }
+
+          if (activeFilters.prime) {
+            const primes = new Set([2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]);
+            const primeCount = ticketNums.filter(n => primes.has(n)).length;
+            if (!(primeCount >= 1 && primeCount <= 3)) return false;
+          }
+
+          if (activeFilters.tail) {
+            const tails = ticketNums.map(n => n % 10);
+            const tailCounts = {};
+            tails.forEach(t => { tailCounts[t] = (tailCounts[t] || 0) + 1; });
+            const maxTailRep = Math.max.apply(null, Object.values(tailCounts));
+            if (maxTailRep !== 2) return false;
+          }
+
+          if (activeFilters.spread) {
+            const minVal = ticketNums[0];
+            const maxVal = ticketNums[ticketNums.length - 1];
+            const spread = maxVal - minVal;
+            const minSpread = game === '645' ? 20 : (game === '655' ? 25 : 15);
+            if (spread < minSpread) return false;
+          }
+
+          return true;
         };
 
         const scoreTicket = (ticketNums, config) => {
@@ -366,10 +467,12 @@ function PredictionV2Panel({
           // 4. Hot/Cold frequencies
           let hotCount = 0;
           let coldCount = 0;
+          const hotList = config.hot || [];
+          const coldList = config.cold || [];
           ticketNums.forEach(n => {
             const nStr = String(n).padStart(2, '0');
-            if (config.hot.slice(0, 8).includes(nStr)) hotCount++;
-            if (config.cold.slice(0, 5).includes(nStr)) coldCount++;
+            if (hotList.slice(0, 8).includes(nStr)) hotCount++;
+            if (coldList.slice(0, 5).includes(nStr)) coldCount++;
           });
           
           if (hotCount >= 1 && hotCount <= 3) {
@@ -441,12 +544,25 @@ function PredictionV2Panel({
           attempts++;
           const nums = generateRandomTicket();
           const { score } = scoreTicket(nums, statsConfig);
-          if (score >= minScore) {
+          if (score === targetScore && checkTicketFilters(nums, statsConfig, activeFilters)) {
             candidates.push({ nums, score });
           }
         }
 
-        // Fallback in case user set high minScore and attempts exceeded
+        // Fallback in case user set high targetScore and attempts exceeded
+        // We relax targetScore, but STILL strictly enforce activeFilters first
+        let fallbackAttempts = 0;
+        const maxFallbackAttempts = count * 500;
+        while (candidates.length < count && fallbackAttempts < maxFallbackAttempts) {
+          fallbackAttempts++;
+          const nums = generateRandomTicket();
+          if (checkTicketFilters(nums, statsConfig, activeFilters)) {
+            const { score } = scoreTicket(nums, statsConfig);
+            candidates.push({ nums, score });
+          }
+        }
+
+        // Absolute last resort fallback (only if filters are mathematically impossible to satisfy together)
         while (candidates.length < count) {
           const nums = generateRandomTicket();
           const { score } = scoreTicket(nums, statsConfig);
@@ -549,7 +665,8 @@ function PredictionV2Panel({
         maxNum,
         mainLength,
         ticketCount,
-        minScore
+        targetScore,
+        activeFilters
       });
     });
   };
@@ -592,39 +709,84 @@ function PredictionV2Panel({
               </div>
 
               <div className="v2-input-group">
-                <label>Mức điểm AI tối thiểu</label>
+                <label>Mức điểm tạo bộ số</label>
                 <select 
                   className="select-field"
-                  value={minScore}
-                  onChange={(e) => setMinScore(parseInt(e.target.value, 10))}
+                  value={targetScore}
+                  onChange={(e) => setTargetScore(parseInt(e.target.value, 10))}
                   style={{ height: '38px', borderRadius: '10px', background: 'rgba(10, 15, 29, 0.6)', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#fff', padding: '0 12px', fontSize: '0.9rem', outline: 'none' }}
                 >
-                  <option value={0}>Bất kỳ (Tối ưu tự động)</option>
-                  <option value={6}>Tối thiểu 6 điểm</option>
-                  <option value={7}>Tối thiểu 7 điểm</option>
-                  <option value={8}>Tối thiểu 8 điểm (Khuyên dùng)</option>
-                  <option value={9}>Tối thiểu 9 điểm</option>
-                  <option value={10}>Tối thiểu 10 điểm (Rất cao)</option>
-                  <option value={11}>Tối thiểu 11 điểm (Cực cao)</option>
-                  <option value={12}>Tối thiểu 12 điểm</option>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(scoreVal => (
+                    <option key={scoreVal} value={scoreVal}>
+                      Tạo bộ số {scoreVal} điểm {scoreVal === avgScore ? '(Khuyên dùng)' : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               <button 
                 className={`v2-btn-generate ${isGenerating ? 'generating' : ''}`}
                 onClick={handleGenerateV2}
-                disabled={isGenerating || isLoadingStats || !statsConfig}
+                disabled={isGenerating || !statsConfig}
                 style={{ flex: 1, minWidth: '160px' }}
               >
                 {isGenerating ? (
-                  <><span className="v2-spinner"></span> Đang chấm {generateProgress.toLocaleString()} / {Math.max(10000, Math.floor(ticketCount * 1.15)).toLocaleString()}</>
-                ) : isLoadingStats ? (
+                  <><span className="v2-spinner"></span> Đang chấm...</>
+                ) : !statsConfig ? (
                   <><span className="v2-spinner"></span> Loading...</>
                 ) : (
                   <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Sinh vé AI</>
                 )}
                 <div className="v2-btn-glow"></div>
               </button>
+            </div>
+
+            {isGenerating && (
+              <div className="v2-progress-container">
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  <span>Quét và lọc ({generateProgress.toLocaleString()} / {Math.max(10000, Math.floor(ticketCount * 1.15)).toLocaleString()}):</span>
+                  <span>{Math.round((generateProgress / Math.max(10000, Math.floor(ticketCount * 1.15))) * 100)}%</span>
+                </div>
+                <div className="v2-progress-bar-bg">
+                  <div 
+                    className="v2-progress-bar-fill" 
+                    style={{ width: `${(generateProgress / Math.max(10000, Math.floor(ticketCount * 1.15))) * 100}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+            
+            <div className="v2-filters-container">
+              <span className="v2-filters-title-label">Bộ lọc quy luật AI bắt buộc (Heuristic Filters)</span>
+              <div className="v2-filters-grid">
+                {[
+                  { key: 'sum', label: 'Tổng điểm vàng' },
+                  { key: 'consecutive', label: 'Cặp số liền kề' },
+                  { key: 'pairs', label: 'Cặp tỷ lệ cao' },
+                  { key: 'hotCold', label: 'Số nóng/lạnh chuẩn' },
+                  { key: 'oddEven', label: 'Cân bằng Chẵn/Lẻ' },
+                  { key: 'lowHigh', label: 'Cân bằng Cao/Thấp' },
+                  { key: 'prime', label: 'Chứa số nguyên tố' },
+                  { key: 'tail', label: 'Nhịp đuôi đối xứng' },
+                  { key: 'spread', label: 'Khoảng cách bộ số' }
+                ].map((item) => (
+                  <label key={item.key} className={`v2-filter-label ${activeFilters[item.key] ? 'active' : ''}`}>
+                    <input
+                      type="checkbox"
+                      className="v2-filter-checkbox-hidden"
+                      checked={activeFilters[item.key]}
+                      onChange={(e) => setActiveFilters(prev => ({ ...prev, [item.key]: e.target.checked }))}
+                      style={{ display: 'none' }}
+                    />
+                    <div className="v2-custom-checkbox">
+                      {activeFilters[item.key] && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      )}
+                    </div>
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
           
@@ -820,12 +982,33 @@ function PredictionV2Panel({
               });
 
               return (
-                <div key={ticket.id} className="glass-panel v2-ticket-card" style={{animationDelay: `${(index % pageSize) * 0.02}s`}}>
+                <div key={ticket.id} className={`glass-panel v2-ticket-card ${ticket.score >= 10 ? 'super-high' : ticket.score >= 8 ? 'high' : 'medium'}`} style={{animationDelay: `${(index % pageSize) * 0.02}s`}}>
                   <div className="v2-ticket-header">
                     <div className="v2-ticket-id">Phương án #{ticket.id}</div>
-                    <div className={`v2-score-badge ${ticket.score >= 10 ? 'super-high' : ticket.score >= 8 ? 'high' : 'medium'}`}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                      Điểm AI: {ticket.score}/13
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        className={`v2-copy-btn ${copyStatusId === ticket.id ? 'copied' : ''}`}
+                        onClick={(e) => {
+                          const text = ticket.numbers.join(', ') + (ticket.specialNumber ? ` | ĐB: ${ticket.specialNumber}` : '');
+                          navigator.clipboard.writeText(text).then(() => {
+                            setCopyStatusId(ticket.id);
+                            setTimeout(() => setCopyStatusId(null), 1200);
+                          });
+                        }}
+                        title="Sao chép bộ số"
+                      >
+                        {copyStatusId === ticket.id ? (
+                          <>✓ <span className="v2-copy-tooltip">Đã chép!</span></>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        )}
+                      </button>
+
+                      <div className={`v2-score-badge ${ticket.score >= 10 ? 'super-high' : ticket.score >= 8 ? 'high' : 'medium'}`}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        Điểm AI: {ticket.score}/13
+                      </div>
                     </div>
                   </div>
 

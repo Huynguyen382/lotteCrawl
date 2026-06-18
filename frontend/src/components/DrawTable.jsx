@@ -1,31 +1,8 @@
 import React from 'react';
 import { API_BASE } from '../config';
 
-function DrawTable({ game, filteredResults, calculateDeltas }) {
+function DrawTable({ game, filteredResults, calculateDeltas, statsConfig }) {
   const [copiedId, setCopiedId] = React.useState(null);
-  const [statsConfig, setStatsConfig] = React.useState(null);
-  const [isLoadingStats, setIsLoadingStats] = React.useState(false);
-
-  React.useEffect(() => {
-    async function fetchStats() {
-      setIsLoadingStats(true);
-      try {
-        const response = await fetch(`${API_BASE}/api/stats/v2/${game}`);
-        const data = await response.json();
-        if (data.success && data.data) {
-          setStatsConfig(data.data);
-        } else {
-          setStatsConfig(null);
-        }
-      } catch (err) {
-        console.error('Lỗi tải cấu hình AI cho bảng:', err);
-        setStatsConfig(null);
-      } finally {
-        setIsLoadingStats(false);
-      }
-    }
-    fetchStats();
-  }, [game]);
 
   const scoreTicket = (ticketNums, config) => {
     if (!config || !config.sums || !config.topPairs || !config.hot || !config.cold) {
