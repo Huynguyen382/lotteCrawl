@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { API_BASE } from '../config';
 import './PredictionV2Panel.css'; // Sẽ tạo file CSS riêng để tách biệt style
 
@@ -14,9 +14,18 @@ function PredictionV2Panel({
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [error, setError] = useState('');
   const [searchTicketQuery, setSearchTicketQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [generateProgress, setGenerateProgress] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
+
+  // Debounce search query to avoid heavy filtering on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchTicketQuery);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchTicketQuery]);
 
   const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
   const mainLength = game === '535' ? 5 : 6;
@@ -24,22 +33,25 @@ function PredictionV2Panel({
   // Reset page number on filter/game/results change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTicketQuery, generatedTickets.length, game]);
+  }, [debouncedQuery, generatedTickets.length, game]);
 
-  // Filter generated tickets based on query
-  const filteredTickets = generatedTickets.filter((ticket) => {
-    if (!searchTicketQuery.trim()) return true;
-    const parts = searchTicketQuery.toLowerCase().split(/[\s,.-]+/).filter(Boolean);
-    return parts.every((part) => {
-      const partInt = parseInt(part, 10);
-      if (!isNaN(partInt)) {
-        const inMain = ticket.numbers.some(n => parseInt(n, 10) === partInt);
-        const inSpecial = ticket.specialNumber ? parseInt(ticket.specialNumber, 10) === partInt : false;
+  // Filter generated tickets based on query (Optimized with useMemo, debouncedQuery, and integer comparisons)
+  const filteredTickets = useMemo(() => {
+    if (!debouncedQuery.trim()) return generatedTickets;
+    const parts = debouncedQuery.toLowerCase().split(/[\s,.-]+/).filter(Boolean);
+    const partNums = parts.map(p => parseInt(p, 10)).filter(n => !isNaN(n));
+    if (partNums.length === 0) return generatedTickets;
+
+    return generatedTickets.filter((ticket) => {
+      return partNums.every((partInt) => {
+        const inMain = ticket.numValues ? ticket.numValues.includes(partInt) : ticket.numbers.some(n => parseInt(n, 10) === partInt);
+        const inSpecial = ticket.specialValue !== undefined && ticket.specialValue !== null
+          ? ticket.specialValue === partInt 
+          : (ticket.specialNumber ? parseInt(ticket.specialNumber, 10) === partInt : false);
         return inMain || inSpecial;
-      }
-      return false;
+      });
     });
-  });
+  }, [generatedTickets, debouncedQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTickets.length / pageSize));
   const paginatedTickets = filteredTickets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -251,7 +263,9 @@ function PredictionV2Panel({
             finalTickets.push({
               id: finalTickets.length + 1,
               numbers: candidates[i].nums.map(n => String(n).padStart(2, '0')),
+              numValues: candidates[i].nums,
               specialNumber: specialStr,
+              specialValue: specialStr ? parseInt(specialStr, 10) : null,
               score: candidates[i].score,
               reasons: uniqueReasons
             });
