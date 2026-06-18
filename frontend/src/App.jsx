@@ -7,6 +7,7 @@ import MobileCards from './components/MobileCards';
 import StatsPanel from './components/StatsPanel';
 import PredictionPanel from './components/PredictionPanel';
 import PredictionV2Panel from './components/PredictionV2Panel';
+import TrendAnalysisPanel from './components/TrendAnalysisPanel';
 
 
 function App() {
@@ -553,6 +554,22 @@ function App() {
               >
                 AI V2 (Scoring)
               </button>
+              <button
+                className={`tab-btn ${activeTab === 'trends' ? 'active' : ''}`}
+                onClick={() => setActiveTab('trends')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: activeTab === 'trends' ? 'var(--accent, #e63946)' : 'var(--text-muted, #8d99ae)',
+                  borderBottom: activeTab === 'trends' ? '2px solid var(--accent, #e63946)' : 'none',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '0.95rem'
+                }}
+              >
+                Phân tích xu hướng
+              </button>
 
             </div>
           )}
@@ -653,6 +670,13 @@ function App() {
               <StatsPanel 
                 game={game} 
                 visibleResults={visibleResults} 
+              />
+            ) : activeTab === 'trends' ? (
+              /* Trend analysis panel */
+              <TrendAnalysisPanel 
+                game={game} 
+                visibleResults={visibleResults} 
+                statsConfig={statsConfigV2}
               />
             ) : activeTab === 'prediction-v2' ? (
               /* AI Prediction V2 panel */

@@ -1,0 +1,525 @@
+/* Trend Analysis Panel Stylesheet */
+
+.trends-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+/* Header & Title Section */
+.trends-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.trends-header h3 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 4px;
+  letter-spacing: -0.01em;
+}
+
+.trends-header p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+/* Controls layout */
+.trends-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.trends-select-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trends-select-group label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dimmed);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.trends-select-group select.select-field {
+  background: rgba(10, 15, 29, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.trends-select-group select.select-field:hover {
+  border-color: var(--primary);
+  background: rgba(10, 15, 29, 0.9);
+}
+
+.trends-select-group select.select-field:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.2);
+}
+
+/* Tabs layout */
+.trends-tabs {
+  background: rgba(10, 15, 29, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 4px;
+  display: flex;
+  gap: 4px;
+}
+
+.trends-tab-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 7px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.25s ease;
+}
+
+.trends-tab-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.trends-tab-btn.active {
+  background: linear-gradient(135deg, var(--primary), #b32a36);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(230, 57, 70, 0.25);
+}
+
+/* Chart Panel Container */
+.trends-chart-panel {
+  padding: 24px;
+  border-radius: 16px;
+  position: relative;
+  min-height: 250px;
+  overflow: visible; /* Needed for floating tooltip overflow */
+}
+
+.trends-chart-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.trends-chart-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  background: var(--primary);
+  margin-right: 12px;
+  border-radius: 2px;
+}
+
+.trends-chart-wrapper {
+  width: 100%;
+  position: relative;
+}
+
+.trends-chart-wrapper svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* Empty data placeholder */
+.trends-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-dimmed);
+  font-size: 0.95rem;
+}
+
+/* Grid & Axes */
+.trends-grid-line {
+  stroke: rgba(255, 255, 255, 0.06);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.trends-axis-text {
+  fill: var(--text-dimmed);
+  font-size: 0.72rem;
+  font-weight: 500;
+  font-family: var(--font-family, sans-serif);
+}
+
+/* Golden zone area */
+.trends-golden-rect {
+  fill: rgba(46, 196, 182, 0.035);
+  stroke: rgba(46, 196, 182, 0.15);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+/* Golden centerline */
+.trends-mean-line {
+  stroke: var(--success);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  opacity: 0.85;
+}
+
+.trends-mean-text {
+  fill: var(--success);
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+/* Chart lines */
+.trends-line {
+  fill: none;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trends-line.sum-line {
+  stroke: #ff5e6c;
+}
+
+.trends-line.score-line {
+  stroke: #ffb703;
+}
+
+/* Interactive dots */
+.trends-dot {
+  cursor: pointer;
+  transition: r 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), stroke-width 0.2s;
+}
+
+.trends-dot.golden {
+  fill: #ff5e6c;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.trends-dot.outer {
+  fill: #0c0f1d;
+  stroke: #ff5e6c;
+  stroke-width: 2.2;
+}
+
+.trends-dot.excellent {
+  fill: #ffb703;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.trends-dot.regular {
+  fill: #0c0f1d;
+  stroke: #ffb703;
+  stroke-width: 2.2;
+}
+
+.trends-dot:hover {
+  r: 8 !important;
+  stroke-width: 2.5;
+}
+
+/* Bars in absence chart */
+.trends-bar {
+  cursor: pointer;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.trends-bar:hover {
+  opacity: 0.85;
+  filter: brightness(1.25) saturate(1.1);
+}
+
+/* Legends styling */
+.trends-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.trends-legend-item {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-indicator {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.legend-indicator.sum-line-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff5e6c;
+  box-shadow: 0 0 6px rgba(255, 94, 108, 0.5);
+}
+
+.legend-indicator.mean-line-dot {
+  width: 16px;
+  height: 2px;
+  background: var(--success);
+}
+
+.legend-indicator.golden-range-dot {
+  width: 16px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(46, 196, 182, 0.15);
+  border: 1px dashed rgba(46, 196, 182, 0.4);
+}
+
+.legend-indicator.normal-bar-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #2ec4b6, rgba(46, 196, 182, 0.3));
+}
+
+.legend-indicator.cold-bar-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #9d4edd, rgba(90, 24, 154, 0.3));
+  box-shadow: 0 0 6px rgba(157, 78, 221, 0.4);
+}
+
+.legend-indicator.score-line-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffb703;
+  box-shadow: 0 0 6px rgba(255, 183, 3, 0.5);
+}
+
+.legend-indicator.excellent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffb703;
+  border: 1.5px solid #fff;
+}
+
+/* Floating Tooltip styling */
+.trends-tooltip-portal {
+  min-width: 200px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 15, 29, 0.94);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 255, 255, 0.05) inset;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.trends-tooltip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tooltip-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.tooltip-title.highlight-red {
+  color: #ff5e6c;
+}
+
+.tooltip-title.highlight-teal {
+  color: #2ec4b6;
+}
+
+.tooltip-title.highlight-gold {
+  color: #ffb703;
+}
+
+.tooltip-date {
+  font-size: 0.74rem;
+  color: var(--text-dimmed);
+  margin-top: -4px;
+}
+
+.tooltip-value {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.tooltip-value strong {
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.tooltip-value.highlight-red strong {
+  color: #ff5e6c;
+}
+
+.tooltip-value.highlight-gold strong {
+  color: #ffb703;
+}
+
+.tooltip-balls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+}
+
+.tooltip-ball {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #fff;
+  background: radial-gradient(circle at 30% 30%, #ff5e6c, var(--primary));
+  box-shadow: 0 2px 5px rgba(230, 57, 70, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.tooltip-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.tooltip-reason-pill {
+  font-size: 0.72rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  border-left: 3px solid var(--primary);
+  width: auto;
+}
+
+.tooltip-reason-pill.neutral {
+  border-left-color: var(--text-dimmed);
+}
+
+/* Badges inside tooltip */
+.badge-pass, .badge-fail, .badge-cold, .badge-normal {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: inline-block;
+  letter-spacing: 0.3px;
+}
+
+.badge-pass {
+  background: rgba(46, 196, 182, 0.12);
+  color: #2ec4b6;
+  border: 1px solid rgba(46, 196, 182, 0.25);
+}
+
+.badge-fail {
+  background: rgba(230, 57, 70, 0.12);
+  color: #ff5e6c;
+  border: 1px solid rgba(230, 57, 70, 0.25);
+}
+
+.badge-cold {
+  background: rgba(157, 78, 221, 0.12);
+  color: #c8b6ff;
+  border: 1px solid rgba(157, 78, 221, 0.25);
+}
+
+.badge-normal {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dimmed);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .trends-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .trends-controls {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .trends-select-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .trends-select-group select.select-field {
+    width: 60%;
+  }
+
+  .trends-tabs {
+    width: 100%;
+  }
+
+  .trends-tab-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 8px 4px;
+    font-size: 0.78rem;
+  }
+
+  .trends-chart-panel {
+    padding: 16px;
+  }
+
+  .trends-legend {
+    gap: 12px;
+  }
+}
