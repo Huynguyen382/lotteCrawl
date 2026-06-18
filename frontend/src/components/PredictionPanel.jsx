@@ -118,138 +118,189 @@ function PredictionPanel({
     setSearchTicketQuery('');
   }, [game, visibleResults]);
 
-  // Handle generation of smart tickets (Async Chunked Generation to prevent UI locking)
+  // Handle generation of smart tickets (Parallel Multi-threaded Web Workers to prevent UI locking and boost speed)
   const handleGenerate = () => {
     if (visibleResults.length === 0) return;
     setIsGenerating(true);
     setGenerateProgress(0);
     setGeneratedTickets([]);
     
-    const tickets = [];
     const { hot: hotList, cold: coldList } = getFrequencyStats();
 
-    // Setup parameters based on game type
-    const midPoint = Math.floor(maxNum / 2);
-    let minSum = 115, maxSum = 165; // Mega 6/45 default
-    if (game === '655') {
-      minSum = 135;
-      maxSum = 200;
-    } else if (game === '535') {
-      minSum = 65;
-      maxSum = 115;
+    // Inline Web Worker script
+    const workerCode = `
+      self.onmessage = function(e) {
+        const { startId, count, maxNum, mainLength, strategy, hotList, coldList, game } = e.data;
+        const tickets = [];
+        
+        // Setup parameters based on game type
+        const midPoint = Math.floor(maxNum / 2);
+        let minSum = 115, maxSum = 165; // Mega 6/45 default
+        if (game === '655') {
+          minSum = 135;
+          maxSum = 200;
+        } else if (game === '535') {
+          minSum = 65;
+          maxSum = 115;
+        }
+
+        for (let t = 0; t < count; t++) {
+          let ticketNums = [];
+          let attempts = 0;
+
+          while (ticketNums.length < mainLength && attempts < 500) {
+            attempts++;
+            let pool = [];
+
+            if (strategy === 'balanced') {
+              pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0'));
+            } else if (strategy === 'hot') {
+              if (Math.random() < 0.6) {
+                pool = hotList;
+              } else {
+                pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0')).filter(n => !hotList.includes(n));
+              }
+            } else if (strategy === 'cold') {
+              if (Math.random() < 0.6) {
+                pool = coldList;
+              } else {
+                pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0')).filter(n => !coldList.includes(n));
+              }
+            } else {
+              pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0'));
+            }
+
+            const randomNum = pool[Math.floor(Math.random() * pool.length)];
+            if (randomNum && !ticketNums.includes(randomNum)) {
+              ticketNums.push(randomNum);
+            }
+
+            if (ticketNums.length === mainLength) {
+              const numVals = ticketNums.map(n => parseInt(n, 10));
+              const sum = numVals.reduce((s, n) => s + n, 0);
+
+              if (sum < minSum || sum > maxSum) {
+                ticketNums = [];
+                continue;
+              }
+
+              const odds = numVals.filter(n => n % 2 !== 0).length;
+              if (mainLength === 6 && (odds < 2 || odds > 4)) {
+                ticketNums = [];
+                continue;
+              }
+              if (mainLength === 5 && (odds < 2 || odds > 3)) {
+                ticketNums = [];
+                continue;
+              }
+
+              const highs = numVals.filter(n => n > midPoint).length;
+              if (mainLength === 6 && (highs < 2 || highs > 4)) {
+                ticketNums = [];
+                continue;
+              }
+              if (mainLength === 5 && (highs < 2 || highs > 3)) {
+                ticketNums = [];
+                continue;
+              }
+            }
+          }
+
+          if (ticketNums.length < mainLength) {
+            ticketNums = [];
+            while (ticketNums.length < mainLength) {
+              const r = String(Math.floor(Math.random() * maxNum) + 1).padStart(2, '0');
+              if (!ticketNums.includes(r)) ticketNums.push(r);
+            }
+          }
+
+          ticketNums.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+
+          let specialNum = null;
+          if (game === '655') {
+            let r = Math.floor(Math.random() * 55) + 1;
+            while (ticketNums.includes(String(r).padStart(2, '0'))) {
+              r = Math.floor(Math.random() * 55) + 1;
+            }
+            specialNum = String(r).padStart(2, '0');
+          } else if (game === '535') {
+            specialNum = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
+          }
+
+          tickets.push({
+            id: startId + t,
+            numbers: ticketNums,
+            numValues: ticketNums.map(n => parseInt(n, 10)),
+            special: specialNum,
+            specialValue: specialNum ? parseInt(specialNum, 10) : null
+          });
+        }
+
+        self.postMessage({ type: 'done', tickets });
+      };
+    `;
+
+    // Divide workload among 4 workers
+    const numWorkers = 4;
+    const parts = [];
+    const baseCount = Math.floor(ticketCount / numWorkers);
+    const remainder = ticketCount % numWorkers;
+
+    let startId = 1;
+    for (let i = 0; i < numWorkers; i++) {
+      const count = baseCount + (i === numWorkers - 1 ? remainder : 0);
+      if (count > 0) {
+        parts.push({ startId, count });
+        startId += count;
+      }
     }
 
-    const CHUNK_SIZE = 5000;
-    let currentCount = 0;
+    let completedWorkers = 0;
+    let combinedTickets = [];
+    const workerProgresses = Array(parts.length).fill(0);
 
-    const generateChunk = () => {
-      const target = Math.min(ticketCount, currentCount + CHUNK_SIZE);
-      
-      for (let t = currentCount; t < target; t++) {
-        let ticketNums = [];
-        let attempts = 0;
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    const activeWorkers = [];
 
-        while (ticketNums.length < mainLength && attempts < 500) {
-          attempts++;
-          let pool = [];
+    parts.forEach((part, index) => {
+      const worker = new Worker(workerUrl);
+      activeWorkers.push(worker);
 
-          if (strategy === 'balanced') {
-            pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0'));
-          } else if (strategy === 'hot') {
-            if (Math.random() < 0.6) {
-              pool = hotList;
-            } else {
-              pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0')).filter(n => !hotList.includes(n));
-            }
-          } else if (strategy === 'cold') {
-            if (Math.random() < 0.6) {
-              pool = coldList;
-            } else {
-              pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0')).filter(n => !coldList.includes(n));
-            }
-          } else {
-            pool = Array.from({ length: maxNum }, (_, idx) => String(idx + 1).padStart(2, '0'));
-          }
+      worker.onmessage = (e) => {
+        if (e.data.type === 'done') {
+          combinedTickets = combinedTickets.concat(e.data.tickets);
+          workerProgresses[index] = part.count;
+          
+          const totalProgress = workerProgresses.reduce((s, v) => s + v, 0);
+          setGenerateProgress(totalProgress);
 
-          const randomNum = pool[Math.floor(Math.random() * pool.length)];
-          if (randomNum && !ticketNums.includes(randomNum)) {
-            ticketNums.push(randomNum);
-          }
+          completedWorkers++;
+          if (completedWorkers === parts.length) {
+            // All workers finished
+            combinedTickets.sort((a, b) => a.id - b.id);
+            setGeneratedTickets(combinedTickets);
+            setSearchTicketQuery('');
+            setIsGenerating(false);
 
-          if (ticketNums.length === mainLength) {
-            const numVals = ticketNums.map(n => parseInt(n, 10));
-            const sum = numVals.reduce((s, n) => s + n, 0);
-
-            if (sum < minSum || sum > maxSum) {
-              ticketNums = [];
-              continue;
-            }
-
-            const odds = numVals.filter(n => n % 2 !== 0).length;
-            if (mainLength === 6 && (odds < 2 || odds > 4)) {
-              ticketNums = [];
-              continue;
-            }
-            if (mainLength === 5 && (odds < 2 || odds > 3)) {
-              ticketNums = [];
-              continue;
-            }
-
-            const highs = numVals.filter(n => n > midPoint).length;
-            if (mainLength === 6 && (highs < 2 || highs > 4)) {
-              ticketNums = [];
-              continue;
-            }
-            if (mainLength === 5 && (highs < 2 || highs > 3)) {
-              ticketNums = [];
-              continue;
-            }
+            // Clean up
+            activeWorkers.forEach(w => w.terminate());
+            URL.revokeObjectURL(workerUrl);
           }
         }
+      };
 
-        if (ticketNums.length < mainLength) {
-          ticketNums = [];
-          while (ticketNums.length < mainLength) {
-            const r = String(Math.floor(Math.random() * maxNum) + 1).padStart(2, '0');
-            if (!ticketNums.includes(r)) ticketNums.push(r);
-          }
-        }
-
-        ticketNums.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-
-        let specialNum = null;
-        if (game === '655') {
-          let r = Math.floor(Math.random() * 55) + 1;
-          while (ticketNums.includes(String(r).padStart(2, '0'))) {
-            r = Math.floor(Math.random() * 55) + 1;
-          }
-          specialNum = String(r).padStart(2, '0');
-        } else if (game === '535') {
-          specialNum = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
-        }
-
-        tickets.push({
-          id: t + 1,
-          numbers: ticketNums,
-          numValues: ticketNums.map(n => parseInt(n, 10)),
-          special: specialNum,
-          specialValue: specialNum ? parseInt(specialNum, 10) : null
-        });
-      }
-
-      currentCount = target;
-      setGenerateProgress(currentCount);
-
-      if (currentCount < ticketCount) {
-        setTimeout(generateChunk, 0);
-      } else {
-        setGeneratedTickets(tickets);
-        setSearchTicketQuery(''); // Reset search query on new generation
-        setIsGenerating(false);
-      }
-    };
-
-    setTimeout(generateChunk, 0);
+      worker.postMessage({
+        startId: part.startId,
+        count: part.count,
+        maxNum,
+        mainLength,
+        strategy,
+        hotList,
+        coldList,
+        game
+      });
+    });
   };
 
   // Filter generated tickets based on query (Optimized with useMemo, debouncedQuery, and integer comparisons)
@@ -362,15 +413,14 @@ function PredictionPanel({
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
           <div className="form-group" style={{ margin: 0 }}>
-            <label>Số lượng vé gợi ý (Từ 1 - 1,000,000)</label>
+            <label>Số lượng vé gợi ý (Không giới hạn)</label>
             <input 
               type="number"
               min="1"
-              max="1000000"
               className="input-field"
               value={ticketCount}
               onChange={(e) => {
-                const val = Math.max(1, Math.min(1000000, parseInt(e.target.value, 10) || 1));
+                const val = Math.max(1, parseInt(e.target.value, 10) || 1);
                 setTicketCount(val);
               }}
             />

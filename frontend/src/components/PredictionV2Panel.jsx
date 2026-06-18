@@ -299,6 +299,7 @@ function PredictionV2Panel({
     return { score, reasons };
   };
 
+  // Handle generation of smart tickets (Parallel Multi-threaded Web Workers to prevent UI locking and boost speed)
   const handleGenerateV2 = () => {
     if (!statsConfig) return;
     setIsGenerating(true);
@@ -306,75 +307,233 @@ function PredictionV2Panel({
     setGeneratedTickets([]);
 
     const numCandidates = Math.max(10000, Math.floor(ticketCount * 1.15));
-    const candidates = [];
-    const CHUNK_SIZE = 10000;
 
-    const generateChunk = () => {
-      const target = Math.min(numCandidates, candidates.length + CHUNK_SIZE);
-      
-      while (candidates.length < target) {
-        const nums = generateRandomTicket();
-        const { score, reasons } = scoreTicket(nums, statsConfig);
-        candidates.push({ nums, score, reasons });
-      }
+    // Inline Web Worker script for heuristic candidate evaluation
+    const workerCodeV2 = `
+      self.onmessage = function(e) {
+        const { count, statsConfig, game, maxNum, mainLength, ticketCount } = e.data;
 
-      setGenerateProgress(candidates.length);
-
-      if (candidates.length < numCandidates) {
-        setTimeout(generateChunk, 0);
-      } else {
-        // Sort descending by score
-        candidates.sort((a, b) => b.score - a.score);
-
-        // Select top unique ones
-        const finalTickets = [];
-        const seenSignatures = new Set();
-        
-        for (let i = 0; i < candidates.length && finalTickets.length < ticketCount; i++) {
-          const sig = candidates[i].nums.join('-');
-          if (!seenSignatures.has(sig)) {
-            seenSignatures.add(sig);
-            
-            let specialStr = null;
-            if (game === '655') {
-              let r = Math.floor(Math.random() * 55) + 1;
-              while (candidates[i].nums.includes(r)) r = Math.floor(Math.random() * 55) + 1;
-              specialStr = String(r).padStart(2, '0');
-            } else if (game === '535') {
-              // Lotto 5/35 số đặc biệt từ 01-12 (EuroMillions/Lucky Star style)
-              let r = Math.floor(Math.random() * 12) + 1;
-              specialStr = String(r).padStart(2, '0');
-            }
-
-            // Filter unique reasons
-            const uniqueReasons = [];
-            const seenReasonTexts = new Set();
-            candidates[i].reasons.forEach(r => {
-              if (!seenReasonTexts.has(r.text)) {
-                seenReasonTexts.add(r.text);
-                uniqueReasons.push(r);
-              }
-            });
-
-            finalTickets.push({
-              id: finalTickets.length + 1,
-              numbers: candidates[i].nums.map(n => String(n).padStart(2, '0')),
-              numValues: candidates[i].nums,
-              specialNumber: specialStr,
-              specialValue: specialStr ? parseInt(specialStr, 10) : null,
-              score: candidates[i].score,
-              reasons: uniqueReasons
-            });
+        // Helper functions inside worker
+        const generateRandomTicket = () => {
+          const nums = new Set();
+          while (nums.size < mainLength) {
+            const r = Math.floor(Math.random() * maxNum) + 1;
+            nums.add(r);
           }
+          return Array.from(nums).sort((a, b) => a - b);
+        };
+
+        const scoreTicket = (ticketNums, config) => {
+          let score = 0;
+
+          // 1. Sum Rule (Bell Curve)
+          const sum = ticketNums.reduce((a, b) => a + b, 0);
+          const mean = config.sums.mean || (game === '645' ? 138 : (game === '655' ? 168 : 90));
+          if (sum >= mean - 15 && sum <= mean + 15) {
+            score += 3;
+          } else if (sum < mean - 30 || sum > mean + 30) {
+            score -= 2;
+          }
+
+          // 2. Consecutive Rule
+          let consecutiveCount = 0;
+          for (let i = 0; i < ticketNums.length - 1; i++) {
+            if (ticketNums[i + 1] - ticketNums[i] === 1) consecutiveCount++;
+          }
+          if (consecutiveCount === 1) {
+            score += 2;
+          } else if (consecutiveCount === 2) {
+            score += 1;
+          } else if (consecutiveCount >= 3) {
+            score -= 3;
+          }
+
+          // 3. Association Rule (Pairs)
+          const top15Pairs = config.topPairs.slice(0, 15);
+          for (let i = 0; i < ticketNums.length; i++) {
+            for (let j = i + 1; j < ticketNums.length; j++) {
+              const p1 = ticketNums[i] + '-' + ticketNums[j];
+              if (top15Pairs.includes(p1)) {
+                score += 2;
+              }
+            }
+          }
+
+          // 4. Hot/Cold frequencies
+          let hotCount = 0;
+          let coldCount = 0;
+          ticketNums.forEach(n => {
+            const nStr = String(n).padStart(2, '0');
+            if (config.hot.slice(0, 8).includes(nStr)) hotCount++;
+            if (config.cold.slice(0, 5).includes(nStr)) coldCount++;
+          });
+          
+          if (hotCount >= 1 && hotCount <= 3) {
+            score += 1;
+          }
+          if (coldCount === 1) {
+            score += 1;
+          }
+
+          // 5. Odd/Even ratio
+          const oddCount = ticketNums.filter(n => n % 2 !== 0).length;
+          const isBalanced = (mainLength === 6 && oddCount >= 2 && oddCount <= 4) || (mainLength === 5 && oddCount >= 2 && oddCount <= 3);
+          if (isBalanced) {
+            score += 1;
+          } else {
+            score -= 2;
+          }
+
+          // 6. Low/High Balance Rule
+          const midPoint = game === '645' ? 23 : (game === '655' ? 28 : 18);
+          const lowCount = ticketNums.filter(n => n < midPoint).length;
+          const highCount = ticketNums.length - lowCount;
+          const isLowHighBalanced = (mainLength === 6 && lowCount >= 2 && lowCount <= 4) || (mainLength === 5 && lowCount >= 2 && lowCount <= 3);
+          if (isLowHighBalanced) {
+            score += 1;
+          } else if (lowCount === 0 || highCount === 0) {
+            score -= 2;
+          }
+
+          // 7. Prime Number Rule
+          const primes = new Set([2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]);
+          const primeCount = ticketNums.filter(n => primes.has(n)).length;
+          if (primeCount >= 1 && primeCount <= 3) {
+            score += 1;
+          } else if (primeCount === 0) {
+            score -= 1;
+          }
+
+          // 8. Tail Digit Repetition Rule
+          const tails = ticketNums.map(n => n % 10);
+          const tailCounts = {};
+          tails.forEach(t => { tailCounts[t] = (tailCounts[t] || 0) + 1; });
+          const maxTailRep = Math.max.apply(null, Object.values(tailCounts));
+          if (maxTailRep === 2) {
+            score += 1;
+          } else if (maxTailRep >= 4) {
+            score -= 3;
+          }
+
+          // 9. Spread Spread Range Check
+          const minVal = ticketNums[0];
+          const maxVal = ticketNums[ticketNums.length - 1];
+          const spread = maxVal - minVal;
+          const minSpread = game === '645' ? 20 : (game === '655' ? 25 : 15);
+          if (spread >= minSpread) {
+            score += 1;
+          } else {
+            score -= 3;
+          }
+
+          return { score };
+        };
+
+        const candidates = [];
+        for (let i = 0; i < count; i++) {
+          const nums = generateRandomTicket();
+          const { score } = scoreTicket(nums, statsConfig);
+          candidates.push({ nums, score });
         }
 
-        setGeneratedTickets(finalTickets);
-        setSearchTicketQuery(''); // Reset search query on new generation
-        setIsGenerating(false);
-      }
-    };
+        // Sort descending locally
+        candidates.sort((a, b) => b.score - a.score);
 
-    setTimeout(generateChunk, 0);
+        // Keep only top candidates to optimize memory transfer
+        const topCandidates = candidates.slice(0, ticketCount);
+
+        self.postMessage({ type: 'done', candidates: topCandidates });
+      };
+    `;
+
+    // Divide candidate workload among 4 workers
+    const numWorkers = 4;
+    const parts = [];
+    const baseCount = Math.floor(numCandidates / numWorkers);
+    const remainder = numCandidates % numWorkers;
+
+    for (let i = 0; i < numWorkers; i++) {
+      const count = baseCount + (i === numWorkers - 1 ? remainder : 0);
+      if (count > 0) {
+        parts.push(count);
+      }
+    }
+
+    let completedWorkers = 0;
+    let allCandidates = [];
+    const workerProgresses = Array(parts.length).fill(0);
+
+    const blob = new Blob([workerCodeV2], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    const activeWorkers = [];
+
+    parts.forEach((count, index) => {
+      const worker = new Worker(workerUrl);
+      activeWorkers.push(worker);
+
+      worker.onmessage = (e) => {
+        if (e.data.type === 'done') {
+          allCandidates = allCandidates.concat(e.data.candidates);
+          workerProgresses[index] = count;
+
+          const totalProgress = workerProgresses.reduce((s, v) => s + v, 0);
+          setGenerateProgress(totalProgress);
+
+          completedWorkers++;
+          if (completedWorkers === parts.length) {
+            // Sort merged candidates
+            allCandidates.sort((a, b) => b.score - a.score);
+
+            // Select unique candidates
+            const finalTickets = [];
+            const seenSignatures = new Set();
+            
+            for (let i = 0; i < allCandidates.length && finalTickets.length < ticketCount; i++) {
+              const sig = allCandidates[i].nums.join('-');
+              if (!seenSignatures.has(sig)) {
+                seenSignatures.add(sig);
+                
+                let specialStr = null;
+                if (game === '655') {
+                  let r = Math.floor(Math.random() * 55) + 1;
+                  while (allCandidates[i].nums.includes(r)) r = Math.floor(Math.random() * 55) + 1;
+                  specialStr = String(r).padStart(2, '0');
+                } else if (game === '535') {
+                  let r = Math.floor(Math.random() * 12) + 1;
+                  specialStr = String(r).padStart(2, '0');
+                }
+
+                finalTickets.push({
+                  id: finalTickets.length + 1,
+                  numbers: allCandidates[i].nums.map(n => String(n).padStart(2, '0')),
+                  numValues: allCandidates[i].nums,
+                  specialNumber: specialStr,
+                  specialValue: specialStr ? parseInt(specialStr, 10) : null,
+                  score: allCandidates[i].score
+                });
+              }
+            }
+
+            setGeneratedTickets(finalTickets);
+            setSearchTicketQuery('');
+            setIsGenerating(false);
+
+            // Clean up
+            activeWorkers.forEach(w => w.terminate());
+            URL.revokeObjectURL(workerUrl);
+          }
+        }
+      };
+
+      worker.postMessage({
+        count,
+        statsConfig,
+        game,
+        maxNum,
+        mainLength,
+        ticketCount
+      });
+    });
   };
 
   return (
@@ -402,13 +561,13 @@ function PredictionV2Panel({
 
             <div className="v2-actions" style={{ marginBottom: '16px' }}>
               <div className="v2-input-group">
-                <label>Số vé xuất ra (Top N)</label>
+                <label>Số vé xuất ra (Không giới hạn)</label>
                 <div className="v2-input-wrapper">
                   <input 
                     type="number" 
-                    min="1" max="1000000" 
+                    min="1"
                     value={ticketCount}
-                    onChange={(e) => setTicketCount(Math.max(1, Math.min(1000000, parseInt(e.target.value) || 1)))}
+                    onChange={(e) => setTicketCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
                   />
                   <span className="v2-input-suffix">Vé</span>
                 </div>
@@ -611,45 +770,58 @@ function PredictionV2Panel({
           )}
 
           <div className="v2-ticket-grid">
-            {paginatedTickets.map((ticket, index) => (
-              <div key={ticket.id} className="glass-panel v2-ticket-card" style={{animationDelay: `${(index % pageSize) * 0.02}s`}}>
-                <div className="v2-ticket-header">
-                  <div className="v2-ticket-id">Phương án #{ticket.id}</div>
-                  <div className={`v2-score-badge ${ticket.score >= 10 ? 'super-high' : ticket.score >= 8 ? 'high' : 'medium'}`}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                    Điểm AI: {ticket.score}/13
-                  </div>
-                </div>
+            {paginatedTickets.map((ticket, index) => {
+              // Dynamically evaluate reasons for the paginated page view to avoid memory bloat
+              const { reasons } = scoreTicket(ticket.numValues, statsConfig);
+              const uniqueReasons = [];
+              const seenReasonTexts = new Set();
+              reasons.forEach(r => {
+                if (!seenReasonTexts.has(r.text)) {
+                  seenReasonTexts.add(r.text);
+                  uniqueReasons.push(r);
+                }
+              });
 
-                <div className="v2-ticket-balls">
-                  {ticket.numbers.map((num, idx) => (
-                    <div key={idx} className="v2-ball main">
-                      {num}
+              return (
+                <div key={ticket.id} className="glass-panel v2-ticket-card" style={{animationDelay: `${(index % pageSize) * 0.02}s`}}>
+                  <div className="v2-ticket-header">
+                    <div className="v2-ticket-id">Phương án #{ticket.id}</div>
+                    <div className={`v2-score-badge ${ticket.score >= 10 ? 'super-high' : ticket.score >= 8 ? 'high' : 'medium'}`}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                      Điểm AI: {ticket.score}/13
                     </div>
-                  ))}
-                  {ticket.specialNumber && (
-                    <div className="v2-ball special">
-                      {ticket.specialNumber}
+                  </div>
+
+                  <div className="v2-ticket-balls">
+                    {ticket.numbers.map((num, idx) => (
+                      <div key={idx} className="v2-ball main">
+                        {num}
+                      </div>
+                    ))}
+                    {ticket.specialNumber && (
+                      <div className="v2-ball special">
+                        {ticket.specialNumber}
+                      </div>
+                    )}
+                  </div>
+
+                  {uniqueReasons.length > 0 && (
+                    <div className="v2-ticket-reasons">
+                      {uniqueReasons.map((r, i) => (
+                        <span key={i} className={`v2-reason-pill ${r.type}`}>
+                          {r.type === 'success' && '✓ '}
+                          {r.type === 'accent' && '✦ '}
+                          {r.type === 'primary' && '🔥 '}
+                          {r.type === 'warning' && '❄ '}
+                          {r.type === 'neutral' && '• '}
+                          {r.text}
+                        </span>
+                      ))}
                     </div>
                   )}
                 </div>
-
-                {ticket.reasons && ticket.reasons.length > 0 && (
-                  <div className="v2-ticket-reasons">
-                    {ticket.reasons.map((r, i) => (
-                      <span key={i} className={`v2-reason-pill ${r.type}`}>
-                        {r.type === 'success' && '✓ '}
-                        {r.type === 'accent' && '✦ '}
-                        {r.type === 'primary' && '🔥 '}
-                        {r.type === 'warning' && '❄ '}
-                        {r.type === 'neutral' && '• '}
-                        {r.text}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Pagination Controls */}
