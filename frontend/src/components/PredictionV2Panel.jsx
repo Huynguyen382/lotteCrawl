@@ -18,6 +18,7 @@ function PredictionV2Panel({
   const [generateProgress, setGenerateProgress] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
+  const [minScore, setMinScore] = useState(0); // 0 means "Bất kỳ"
 
   // Debounce search query to avoid heavy filtering on every keystroke
   useEffect(() => {
@@ -185,6 +186,9 @@ function PredictionV2Panel({
   };
 
   const scoreTicket = (ticketNums, config) => {
+    if (!config || !config.sums || !config.topPairs || !config.hot || !config.cold) {
+      return { score: 0, reasons: [] };
+    }
     let score = 0;
     const reasons = [];
 
@@ -311,7 +315,7 @@ function PredictionV2Panel({
     // Inline Web Worker script for heuristic candidate evaluation
     const workerCodeV2 = `
       self.onmessage = function(e) {
-        const { count, statsConfig, game, maxNum, mainLength, ticketCount } = e.data;
+        const { count, statsConfig, game, maxNum, mainLength, ticketCount, minScore } = e.data;
 
         // Helper functions inside worker
         const generateRandomTicket = () => {
@@ -430,7 +434,20 @@ function PredictionV2Panel({
         };
 
         const candidates = [];
-        for (let i = 0; i < count; i++) {
+        let attempts = 0;
+        const maxAttempts = count * 200;
+
+        while (candidates.length < count && attempts < maxAttempts) {
+          attempts++;
+          const nums = generateRandomTicket();
+          const { score } = scoreTicket(nums, statsConfig);
+          if (score >= minScore) {
+            candidates.push({ nums, score });
+          }
+        }
+
+        // Fallback in case user set high minScore and attempts exceeded
+        while (candidates.length < count) {
           const nums = generateRandomTicket();
           const { score } = scoreTicket(nums, statsConfig);
           candidates.push({ nums, score });
@@ -531,7 +548,8 @@ function PredictionV2Panel({
         game,
         maxNum,
         mainLength,
-        ticketCount
+        ticketCount,
+        minScore
       });
     });
   };
@@ -571,6 +589,25 @@ function PredictionV2Panel({
                   />
                   <span className="v2-input-suffix">Vé</span>
                 </div>
+              </div>
+
+              <div className="v2-input-group">
+                <label>Mức điểm AI tối thiểu</label>
+                <select 
+                  className="select-field"
+                  value={minScore}
+                  onChange={(e) => setMinScore(parseInt(e.target.value, 10))}
+                  style={{ height: '38px', borderRadius: '10px', background: 'rgba(10, 15, 29, 0.6)', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#fff', padding: '0 12px', fontSize: '0.9rem', outline: 'none' }}
+                >
+                  <option value={0}>Bất kỳ (Tối ưu tự động)</option>
+                  <option value={6}>Tối thiểu 6 điểm</option>
+                  <option value={7}>Tối thiểu 7 điểm</option>
+                  <option value={8}>Tối thiểu 8 điểm (Khuyên dùng)</option>
+                  <option value={9}>Tối thiểu 9 điểm</option>
+                  <option value={10}>Tối thiểu 10 điểm (Rất cao)</option>
+                  <option value={11}>Tối thiểu 11 điểm (Cực cao)</option>
+                  <option value={12}>Tối thiểu 12 điểm</option>
+                </select>
               </div>
 
               <button 

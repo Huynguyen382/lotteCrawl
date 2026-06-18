@@ -43,7 +43,7 @@ function PredictionPanel({
 
     // Count frequency in main numbers of visible results
     visibleResults.forEach(draw => {
-      const mainNums = draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10));
+      const mainNums = draw.numbers ? draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10)) : [];
       mainNums.forEach(num => {
         if (counts[num] !== undefined) counts[num]++;
       });
@@ -62,7 +62,7 @@ function PredictionPanel({
     const absences = [];
     for (let i = 1; i <= maxNum; i++) {
       const idx = reversedResults.findIndex(draw => {
-        const mainNums = draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10));
+        const mainNums = draw.numbers ? draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10)) : [];
         return mainNums.includes(i);
       });
       absences.push({
@@ -92,7 +92,7 @@ function PredictionPanel({
     // Calculations for simulated AI comments
     const last10 = [...visibleResults].sort((a, b) => b.drawId - a.drawId).slice(0, 10);
     const sums = last10.map(draw => {
-      const nums = draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10));
+      const nums = draw.numbers ? draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10)) : [];
       return nums.reduce((s, n) => s + n, 0);
     });
     const avgSum = Math.round(sums.reduce((s, n) => s + n, 0) / Math.max(1, sums.length));
@@ -101,7 +101,7 @@ function PredictionPanel({
     let oddCount = 0;
     let totalCount = 0;
     last10.forEach(draw => {
-      const nums = draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10));
+      const nums = draw.numbers ? draw.numbers.slice(0, mainLength).map(n => parseInt(n, 10)) : [];
       nums.forEach(n => {
         if (n % 2 !== 0) oddCount++;
         totalCount++;
