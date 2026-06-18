@@ -56,6 +56,102 @@ function PredictionV2Panel({
   const totalPages = Math.max(1, Math.ceil(filteredTickets.length / pageSize));
   const paginatedTickets = filteredTickets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
+  // States for custom ticket scoring
+  const [numbersInput, setNumbersInput] = useState('');
+  const [specialInput, setSpecialInput] = useState('');
+  const [customScoreResult, setCustomScoreResult] = useState(null);
+  const [scoreError, setScoreError] = useState('');
+
+  // Reset custom scoring states on game change
+  useEffect(() => {
+    setNumbersInput('');
+    setSpecialInput('');
+    setCustomScoreResult(null);
+    setScoreError('');
+  }, [game]);
+
+  const handleScoreCustomTicket = () => {
+    setScoreError('');
+    setCustomScoreResult(null);
+
+    if (!statsConfig) {
+      setScoreError('Dữ liệu mô hình AI chưa được tải xong.');
+      return;
+    }
+
+    // Parse main numbers
+    const parts = numbersInput.trim().split(/[\s,.-]+/).filter(Boolean);
+    const parsedNums = parts.map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+
+    // Validate main numbers length
+    if (parsedNums.length !== mainLength) {
+      setScoreError(`Bộ số chính phải có đúng ${mainLength} số.`);
+      return;
+    }
+
+    // Validate boundaries and uniqueness
+    const seen = new Set();
+    for (const num of parsedNums) {
+      if (num < 1 || num > maxNum) {
+        setScoreError(`Các số chính phải nằm trong khoảng từ 01 đến ${String(maxNum).padStart(2, '0')}.`);
+        return;
+      }
+      if (seen.has(num)) {
+        setScoreError('Các số chính không được trùng lặp.');
+        return;
+      }
+      seen.add(num);
+    }
+
+    // Sort ascending
+    const sortedNums = [...parsedNums].sort((a, b) => a - b);
+
+    // Parse special number if applicable
+    let specialNumParsed = null;
+    if (game === '655' || game === '535') {
+      const specTrim = specialInput.trim();
+      if (!specTrim) {
+        setScoreError('Vui lòng nhập số đặc biệt (Số Bonus).');
+        return;
+      }
+      const num = parseInt(specTrim, 10);
+      if (isNaN(num)) {
+        setScoreError('Số đặc biệt phải là một số.');
+        return;
+      }
+      const maxSpec = game === '655' ? 55 : 12;
+      if (num < 1 || num > maxSpec) {
+        setScoreError(`Số đặc biệt phải nằm trong khoảng từ 01 đến ${String(maxSpec).padStart(2, '0')}.`);
+        return;
+      }
+      if (game === '655' && sortedNums.includes(num)) {
+        setScoreError('Số đặc biệt không được trùng với các số chính.');
+        return;
+      }
+      specialNumParsed = num;
+    }
+
+    // Score the ticket
+    const { score, reasons } = scoreTicket(sortedNums, statsConfig);
+
+    // Filter unique reasons
+    const uniqueReasons = [];
+    const seenReasonTexts = new Set();
+    reasons.forEach(r => {
+      if (!seenReasonTexts.has(r.text)) {
+        seenReasonTexts.add(r.text);
+        uniqueReasons.push(r);
+      }
+    });
+
+    setCustomScoreResult({
+      numbers: sortedNums.map(n => String(n).padStart(2, '0')),
+      specialNumber: specialNumParsed !== null ? String(specialNumParsed).padStart(2, '0') : null,
+      score,
+      reasons: uniqueReasons
+    });
+  };
+
   // Fetch AI V2 stats configuration from Backend
   useEffect(() => {
     async function fetchStats() {
@@ -294,59 +390,161 @@ function PredictionV2Panel({
         <div className="v2-badge-glow">Premium Mode</div>
       </div>
 
-      <div className="glass-panel v2-control-panel">
-        <p className="v2-description">
-          Thuật toán V2 quét và đánh giá <strong>{Math.max(10000, Math.floor(ticketCount * 1.15)).toLocaleString()} vé ngẫu nhiên</strong> theo các quy luật thực tế: Điểm rơi Toán Học, Tần suất Chẵn/Lẻ, và Ma trận Liên kết. 
-        </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+        {/* Panel 1: Huấn luyện & Sinh Vé AI */}
+        <div className="glass-panel v2-control-panel" style={{ margin: 0, display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
+          <div>
+            <p className="v2-description" style={{ marginBottom: '16px' }}>
+              Thuật toán V2 quét và đánh giá <strong>{Math.max(10000, Math.floor(ticketCount * 1.15)).toLocaleString()} vé ngẫu nhiên</strong> theo các quy luật thực tế: Điểm rơi Toán Học, Tần suất Chẵn/Lẻ, và Ma trận Liên kết. 
+            </p>
 
-        {error && <div className="v2-error-banner"><i className="fas fa-exclamation-triangle"></i> {error}</div>}
+            {error && <div className="v2-error-banner"><i className="fas fa-exclamation-triangle"></i> {error}</div>}
 
-        <div className="v2-actions">
-          <div className="v2-input-group">
-            <label>Số vé xuất ra (Top N)</label>
-            <div className="v2-input-wrapper">
-              <input 
-                type="number" 
-                min="1" max="1000000" 
-                value={ticketCount}
-                onChange={(e) => setTicketCount(Math.max(1, Math.min(1000000, parseInt(e.target.value) || 1)))}
-              />
-              <span className="v2-input-suffix">Vé</span>
+            <div className="v2-actions" style={{ marginBottom: '16px' }}>
+              <div className="v2-input-group">
+                <label>Số vé xuất ra (Top N)</label>
+                <div className="v2-input-wrapper">
+                  <input 
+                    type="number" 
+                    min="1" max="1000000" 
+                    value={ticketCount}
+                    onChange={(e) => setTicketCount(Math.max(1, Math.min(1000000, parseInt(e.target.value) || 1)))}
+                  />
+                  <span className="v2-input-suffix">Vé</span>
+                </div>
+              </div>
+
+              <button 
+                className={`v2-btn-generate ${isGenerating ? 'generating' : ''}`}
+                onClick={handleGenerateV2}
+                disabled={isGenerating || isLoadingStats || !statsConfig}
+                style={{ flex: 1, minWidth: '160px' }}
+              >
+                {isGenerating ? (
+                  <><span className="v2-spinner"></span> Đang chấm {generateProgress.toLocaleString()} / {Math.max(10000, Math.floor(ticketCount * 1.15)).toLocaleString()}</>
+                ) : isLoadingStats ? (
+                  <><span className="v2-spinner"></span> Loading...</>
+                ) : (
+                  <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Sinh vé AI</>
+                )}
+                <div className="v2-btn-glow"></div>
+              </button>
             </div>
+          </div>
+          
+          {statsConfig && (
+            <div className="v2-stats-summary" style={{ marginTop: 'auto', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+              <div className="v2-stat-chip">
+                <span className="v2-stat-label">Model</span>
+                <span className="v2-stat-value">{statsConfig.totalDraws} kỳ</span>
+              </div>
+              <div className="v2-stat-chip">
+                <span className="v2-stat-label">Tổng Tb</span>
+                <span className="v2-stat-value">{statsConfig.sums.mean}</span>
+              </div>
+              <div className="v2-stat-chip">
+                <span className="v2-stat-label">Cặp Hot</span>
+                <span className="v2-stat-value">{statsConfig.topPairs[0]}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Panel 2: Chấm Điểm Cá Nhân */}
+        <div className="glass-panel v2-control-panel" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '14px', height: '100%' }}>
+          <h4 style={{ margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '1.2rem' }}>🔍</span> Chấm Điểm Bộ Số Của Bạn
+          </h4>
+          <p className="v2-description" style={{ margin: 0, fontSize: '0.8rem' }}>
+            Nhập bộ số chính gồm {mainLength} số (ví dụ: {game === '535' ? '05 12 18 20 31' : '05 12 18 20 31 44'}) để kiểm tra điểm Heuristic dựa trên các phân phối thống kê.
+          </p>
+
+          {scoreError && <div className="v2-error-banner" style={{ padding: '8px 12px', fontSize: '0.8rem', margin: 0 }}><i className="fas fa-exclamation-triangle"></i> {scoreError}</div>}
+
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
+            <div className="v2-input-group" style={{ flex: 1 }}>
+              <label>Bộ số chính ({mainLength} số)</label>
+              <input 
+                type="text" 
+                className="input-field" 
+                placeholder={game === '535' ? 'Ví dụ: 02 12 19 24 31' : 'Ví dụ: 02 12 19 24 31 44'} 
+                value={numbersInput}
+                onChange={(e) => setNumbersInput(e.target.value)}
+                style={{ height: '38px', fontSize: '0.85rem' }}
+              />
+            </div>
+            
+            {(game === '655' || game === '535') && (
+              <div className="v2-input-group" style={{ width: '80px' }}>
+                <label>Số ĐB</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder={game === '655' ? '01-55' : '01-12'} 
+                  value={specialInput}
+                  onChange={(e) => setSpecialInput(e.target.value)}
+                  style={{ height: '38px', textAlign: 'center', fontSize: '0.85rem' }}
+                />
+              </div>
+            )}
           </div>
 
           <button 
-            className={`v2-btn-generate ${isGenerating ? 'generating' : ''}`}
-            onClick={handleGenerateV2}
-            disabled={isGenerating || isLoadingStats || !statsConfig}
+            className="v2-btn-generate"
+            onClick={handleScoreCustomTicket}
+            disabled={!statsConfig}
+            style={{ width: '100%', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
           >
-            {isGenerating ? (
-              <><span className="v2-spinner"></span> Đang chấm điểm {generateProgress.toLocaleString()} / {Math.max(10000, Math.floor(ticketCount * 1.15)).toLocaleString()} ứng viên...</>
-            ) : isLoadingStats ? (
-              <><span className="v2-spinner"></span> Đang nạp {game} model...</>
-            ) : (
-              <><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Huấn Luyện & Sinh Vé</>
-            )}
-            <div className="v2-btn-glow"></div>
+            <span>📊</span> Chấm Điểm Ngay
           </button>
+
+          {/* Custom Score Result Display */}
+          {customScoreResult && (
+            <div style={{ 
+              marginTop: '10px', 
+              padding: '12px', 
+              background: 'rgba(255,255,255,0.02)', 
+              borderRadius: '8px', 
+              border: '1px solid rgba(255,255,255,0.05)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Kết quả chấm điểm:</span>
+                <div className={`v2-score-badge ${customScoreResult.score >= 10 ? 'super-high' : customScoreResult.score >= 8 ? 'high' : 'medium'}`} style={{ margin: 0, padding: '2px 8px', fontSize: '0.75rem' }}>
+                  Điểm AI: {customScoreResult.score}/13
+                </div>
+              </div>
+
+              <div className="v2-ticket-balls" style={{ justifyContent: 'center', gap: '6px', margin: '4px 0' }}>
+                {customScoreResult.numbers.map((num, idx) => (
+                  <div key={idx} className="v2-ball main" style={{ width: '32px', height: '32px', fontSize: '0.85rem', lineHeight: '32px' }}>
+                    {num}
+                  </div>
+                ))}
+                {customScoreResult.specialNumber && (
+                  <div className="v2-ball special" style={{ width: '32px', height: '32px', fontSize: '0.85rem', lineHeight: '32px' }}>
+                    {customScoreResult.specialNumber}
+                  </div>
+                )}
+              </div>
+
+              <div className="v2-ticket-reasons" style={{ maxHeight: '90px', overflowY: 'auto', gap: '4px', paddingRight: '4px' }}>
+                {customScoreResult.reasons.map((r, i) => (
+                  <span key={i} className={`v2-reason-pill ${r.type}`} style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
+                    {r.type === 'success' && '✓ '}
+                    {r.type === 'accent' && '✦ '}
+                    {r.type === 'primary' && '🔥 '}
+                    {r.type === 'warning' && '❄ '}
+                    {r.type === 'neutral' && '• '}
+                    {r.text}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-        
-        {statsConfig && (
-          <div className="v2-stats-summary">
-            <div className="v2-stat-chip">
-              <span className="v2-stat-label">Kho Dữ Liệu</span>
-              <span className="v2-stat-value">{statsConfig.totalDraws} kỳ quay</span>
-            </div>
-            <div className="v2-stat-chip">
-              <span className="v2-stat-label">Tổng Trung Bình</span>
-              <span className="v2-stat-value">{statsConfig.sums.mean}</span>
-            </div>
-            <div className="v2-stat-chip">
-              <span className="v2-stat-label">Cặp Nóng Nhất</span>
-              <span className="v2-stat-value">{statsConfig.topPairs[0]}</span>
-            </div>
-          </div>
-        )}
       </div>
 
       {generatedTickets.length > 0 && (
