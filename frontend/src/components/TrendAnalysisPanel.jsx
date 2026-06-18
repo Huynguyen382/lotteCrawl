@@ -500,11 +500,15 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
 
-    const yMax = 13;
+    const maxScoreVal = Math.max(...trendData.map(d => d.score), 13);
+    const yMax = Math.ceil(maxScoreVal / 2) * 2;
     const getX = (idx) => padding.left + (idx / (trendData.length - 1)) * plotWidth;
     const getY = (val) => padding.top + plotHeight - (val / yMax) * plotHeight;
 
-    const gridLines = [0, 2, 4, 6, 8, 10, 12, 13];
+    const gridLines = [];
+    for (let v = 0; v <= yMax; v += 2) {
+      gridLines.push(v);
+    }
     const points = trendData.map((d, i) => `${getX(i)},${getY(d.score)}`);
     const pathD = `M ${points.join(' L ')}`;
 
