@@ -1,6 +1,30 @@
 import React from 'react';
 
 function MobileCards({ game, filteredResults, calculateDeltas }) {
+  const [copiedId, setCopiedId] = React.useState(null);
+
+  const handleCopyNumbers = (drawId, numbers, gameType) => {
+    let textToCopy = '';
+    if (gameType === '645') {
+      textToCopy = numbers.join(' ');
+    } else if (gameType === '655') {
+      const main = numbers.slice(0, 6).join(' ');
+      const bonus = numbers[6];
+      textToCopy = `${main} | ${bonus}`;
+    } else if (gameType === '535') {
+      const main = numbers.slice(0, 5).join(' ');
+      const bonus = numbers[5];
+      textToCopy = `${main} | ${bonus}`;
+    }
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopiedId(drawId);
+      setTimeout(() => setCopiedId(null), 1500);
+    }).catch(err => {
+      console.error('Lỗi sao chép:', err);
+    });
+  };
+
   return (
     <div className="mobile-only mobile-cards-container">
       {filteredResults.slice().reverse().map((draw) => {
@@ -9,9 +33,48 @@ function MobileCards({ game, filteredResults, calculateDeltas }) {
           const jackpot = draw.prizes.find(p => p.name.toLowerCase().includes('jackpot')) || { valueStr: '0', count: 0 };
           return (
             <div key={draw.drawId} className="mobile-draw-card glass-panel">
-              <div className="card-header">
-                <span className="draw-id">#{draw.drawIdStr}</span>
-                <span className="draw-date">{draw.dateStr}</span>
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span className="draw-id">#{draw.drawIdStr}</span>
+                  <span className="draw-date">{draw.dateStr}</span>
+                </div>
+                <button
+                  title="Copy bộ số"
+                  onClick={() => handleCopyNumbers(draw.drawId, draw.numbers, game)}
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '4px',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: '4px 6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s',
+                    height: '24px',
+                    width: '24px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                    e.currentTarget.style.color = '#fff';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                    e.currentTarget.style.color = 'var(--text-muted)';
+                  }}
+                >
+                  {copiedId === draw.drawId ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2ec4b6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                  )}
+                </button>
               </div>
               
               <div className="card-body">
@@ -74,9 +137,48 @@ function MobileCards({ game, filteredResults, calculateDeltas }) {
           const jp2 = draw.prizes.find(p => p.name.includes('Jackpot 2')) || { valueStr: '0', count: 0 };
           return (
             <div key={draw.drawId} className="mobile-draw-card glass-panel">
-              <div className="card-header">
-                <span className="draw-id">#{draw.drawIdStr}</span>
-                <span className="draw-date">{draw.dateStr}</span>
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span className="draw-id">#{draw.drawIdStr}</span>
+                  <span className="draw-date">{draw.dateStr}</span>
+                </div>
+                <button
+                  title="Copy bộ số"
+                  onClick={() => handleCopyNumbers(draw.drawId, draw.numbers, game)}
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '4px',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: '4px 6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s',
+                    height: '24px',
+                    width: '24px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                    e.currentTarget.style.color = '#fff';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                    e.currentTarget.style.color = 'var(--text-muted)';
+                  }}
+                >
+                  {copiedId === draw.drawId ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2ec4b6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                  )}
+                </button>
               </div>
               
               <div className="card-body">
@@ -155,9 +257,48 @@ function MobileCards({ game, filteredResults, calculateDeltas }) {
           const jackpot = draw.prizes.find(p => p.name.includes('Độc Đắc')) || { valueStr: '0', count: 0 };
           return (
             <div key={draw.drawId} className="mobile-draw-card glass-panel">
-              <div className="card-header">
-                <span className="draw-id">#{draw.drawIdStr}</span>
-                <span className="draw-date">{draw.dateStr}</span>
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span className="draw-id">#{draw.drawIdStr}</span>
+                  <span className="draw-date">{draw.dateStr}</span>
+                </div>
+                <button
+                  title="Copy bộ số"
+                  onClick={() => handleCopyNumbers(draw.drawId, draw.numbers, game)}
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '4px',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: '4px 6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s',
+                    height: '24px',
+                    width: '24px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                    e.currentTarget.style.color = '#fff';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                    e.currentTarget.style.color = 'var(--text-muted)';
+                  }}
+                >
+                  {copiedId === draw.drawId ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2ec4b6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                  )}
+                </button>
               </div>
               
               <div className="card-body">

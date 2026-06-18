@@ -1,6 +1,29 @@
 import React from 'react';
 
 function DrawTable({ game, filteredResults, calculateDeltas }) {
+  const [copiedId, setCopiedId] = React.useState(null);
+
+  const handleCopyNumbers = (drawId, numbers, gameType) => {
+    let textToCopy = '';
+    if (gameType === '645') {
+      textToCopy = numbers.join(' ');
+    } else if (gameType === '655') {
+      const main = numbers.slice(0, 6).join(' ');
+      const bonus = numbers[6];
+      textToCopy = `${main} | ${bonus}`;
+    } else if (gameType === '535') {
+      const main = numbers.slice(0, 5).join(' ');
+      const bonus = numbers[5];
+      textToCopy = `${main} | ${bonus}`;
+    }
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopiedId(drawId);
+      setTimeout(() => setCopiedId(null), 1500);
+    }).catch(err => {
+      console.error('Lỗi sao chép:', err);
+    });
+  };
   return (
     <div className="table-wrapper desktop-only">
       <table className="preview-table">
@@ -47,15 +70,55 @@ function DrawTable({ game, filteredResults, calculateDeltas }) {
                   <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>#{draw.drawIdStr}</td>
                   <td>{draw.dateStr}</td>
                   <td>
-                    <div className="balls-container">
-                      {draw.numbers.map((n, i) => (
-                        <div key={i} className="ball-wrapper">
-                          <span className="ball">{n}</span>
-                          <span className="ball-absence">
-                            {draw.individualAbsences ? draw.individualAbsences[i] : 'N/A'}
-                          </span>
-                        </div>
-                      ))}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div className="balls-container" style={{ margin: 0 }}>
+                        {draw.numbers.map((n, i) => (
+                          <div key={i} className="ball-wrapper">
+                            <span className="ball">{n}</span>
+                            <span className="ball-absence">
+                              {draw.individualAbsences ? draw.individualAbsences[i] : 'N/A'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        title="Copy bộ số"
+                        onClick={() => handleCopyNumbers(draw.drawId, draw.numbers, game)}
+                        style={{
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: '4px',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: '4px 6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.2s',
+                          height: '28px',
+                          width: '28px',
+                          flexShrink: 0
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                          e.currentTarget.style.color = '#fff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                          e.currentTarget.style.color = 'var(--text-muted)';
+                        }}
+                      >
+                        {copiedId === draw.drawId ? (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2ec4b6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                          </svg>
+                        )}
+                      </button>
                     </div>
                     {numDeltas.length > 0 && (
                       <div className="deltas-container" style={{ display: 'flex', gap: '8px', marginTop: '4px', paddingLeft: '2px', fontSize: '0.75rem', fontWeight: 'bold' }}>
@@ -97,22 +160,62 @@ function DrawTable({ game, filteredResults, calculateDeltas }) {
                   <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>#{draw.drawIdStr}</td>
                   <td>{draw.dateStr}</td>
                   <td>
-                    <div className="balls-container">
-                      {draw.numbers.slice(0, 6).map((n, i) => (
-                        <div key={i} className="ball-wrapper">
-                          <span className="ball">{n}</span>
-                          <span className="ball-absence">
-                            {draw.individualAbsences ? draw.individualAbsences[i] : 'N/A'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div className="balls-container" style={{ margin: 0 }}>
+                        {draw.numbers.slice(0, 6).map((n, i) => (
+                          <div key={i} className="ball-wrapper">
+                            <span className="ball">{n}</span>
+                            <span className="ball-absence">
+                              {draw.individualAbsences ? draw.individualAbsences[i] : 'N/A'}
+                            </span>
+                          </div>
+                        ))}
+                        <span style={{ color: 'var(--border-color)', alignSelf: 'flex-start', marginTop: '4px', fontSize: '1.2rem' }}>|</span>
+                        <div className="ball-wrapper">
+                          <span className="ball power-bonus">{draw.numbers[6]}</span>
+                          <span className="ball-absence" style={{ color: 'var(--warning)' }}>
+                            {draw.individualAbsences ? draw.individualAbsences[6] : 'N/A'}
                           </span>
                         </div>
-                      ))}
-                      <span style={{ color: 'var(--border-color)', alignSelf: 'flex-start', marginTop: '4px', fontSize: '1.2rem' }}>|</span>
-                      <div className="ball-wrapper">
-                        <span className="ball power-bonus">{draw.numbers[6]}</span>
-                        <span className="ball-absence" style={{ color: 'var(--warning)' }}>
-                          {draw.individualAbsences ? draw.individualAbsences[6] : 'N/A'}
-                        </span>
                       </div>
+                      <button
+                        title="Copy bộ số"
+                        onClick={() => handleCopyNumbers(draw.drawId, draw.numbers, game)}
+                        style={{
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: '4px',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: '4px 6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.2s',
+                          height: '28px',
+                          width: '28px',
+                          flexShrink: 0
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                          e.currentTarget.style.color = '#fff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                          e.currentTarget.style.color = 'var(--text-muted)';
+                        }}
+                      >
+                        {copiedId === draw.drawId ? (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2ec4b6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                          </svg>
+                        )}
+                      </button>
                     </div>
                     {numDeltas.length > 0 && (
                       <div className="deltas-container" style={{ display: 'flex', gap: '8px', marginTop: '4px', paddingLeft: '2px', fontSize: '0.75rem', fontWeight: 'bold' }}>
@@ -162,22 +265,62 @@ function DrawTable({ game, filteredResults, calculateDeltas }) {
                   <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>#{draw.drawIdStr}</td>
                   <td>{draw.dateStr}</td>
                   <td>
-                    <div className="balls-container">
-                      {draw.numbers.slice(0, 5).map((n, i) => (
-                        <div key={i} className="ball-wrapper">
-                          <span className="ball">{n}</span>
-                          <span className="ball-absence">
-                            {draw.individualAbsences ? draw.individualAbsences[i] : 'N/A'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div className="balls-container" style={{ margin: 0 }}>
+                        {draw.numbers.slice(0, 5).map((n, i) => (
+                          <div key={i} className="ball-wrapper">
+                            <span className="ball">{n}</span>
+                            <span className="ball-absence">
+                              {draw.individualAbsences ? draw.individualAbsences[i] : 'N/A'}
+                            </span>
+                          </div>
+                        ))}
+                        <span style={{ color: 'var(--border-color)', alignSelf: 'flex-start', marginTop: '4px', fontSize: '1.2rem' }}>|</span>
+                        <div className="ball-wrapper">
+                          <span className="ball power-bonus">{draw.numbers[5]}</span>
+                          <span className="ball-absence" style={{ color: 'var(--warning)' }}>
+                            {draw.individualAbsences ? draw.individualAbsences[5] : 'N/A'}
                           </span>
                         </div>
-                      ))}
-                      <span style={{ color: 'var(--border-color)', alignSelf: 'flex-start', marginTop: '4px', fontSize: '1.2rem' }}>|</span>
-                      <div className="ball-wrapper">
-                        <span className="ball power-bonus">{draw.numbers[5]}</span>
-                        <span className="ball-absence" style={{ color: 'var(--warning)' }}>
-                          {draw.individualAbsences ? draw.individualAbsences[5] : 'N/A'}
-                        </span>
                       </div>
+                      <button
+                        title="Copy bộ số"
+                        onClick={() => handleCopyNumbers(draw.drawId, draw.numbers, game)}
+                        style={{
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: '4px',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: '4px 6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.2s',
+                          height: '28px',
+                          width: '28px',
+                          flexShrink: 0
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                          e.currentTarget.style.color = '#fff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                          e.currentTarget.style.color = 'var(--text-muted)';
+                        }}
+                      >
+                        {copiedId === draw.drawId ? (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2ec4b6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                          </svg>
+                        )}
+                      </button>
                     </div>
                     {numDeltas.length > 0 && (
                       <div className="deltas-container" style={{ display: 'flex', gap: '8px', marginTop: '4px', paddingLeft: '2px', fontSize: '0.75rem', fontWeight: 'bold' }}>
