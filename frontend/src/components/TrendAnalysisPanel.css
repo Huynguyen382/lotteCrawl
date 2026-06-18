@@ -108,6 +108,107 @@
   box-shadow: 0 4px 12px rgba(230, 57, 70, 0.25);
 }
 
+/* Summary Cards Row */
+.trends-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+.trends-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.25s ease, border-color 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.trends-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+}
+
+.trends-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.trends-card-icon {
+  font-size: 1.7rem;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.trends-card.highlight-red .trends-card-icon {
+  background: rgba(255, 94, 108, 0.08);
+  border-color: rgba(255, 94, 108, 0.18);
+}
+
+.trends-card.highlight-purple .trends-card-icon {
+  background: rgba(157, 78, 221, 0.08);
+  border-color: rgba(157, 78, 221, 0.18);
+}
+
+.trends-card.highlight-gold .trends-card-icon {
+  background: rgba(255, 183, 3, 0.08);
+  border-color: rgba(255, 183, 3, 0.18);
+}
+
+.trends-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trends-card-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-dimmed);
+  letter-spacing: 0.5px;
+}
+
+.trends-card-value {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.trends-card.highlight-red .trends-card-value {
+  color: #ff5e6c;
+}
+
+.trends-card.highlight-purple .trends-card-value {
+  color: #c8b6ff;
+}
+
+.trends-card.highlight-gold .trends-card-value {
+  color: #ffb703;
+}
+
+.trends-card-value-max {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-dimmed);
+  margin-left: 2px;
+}
+
 /* Chart Panel Container */
 .trends-chart-panel {
   padding: 24px;
@@ -195,10 +296,28 @@
   opacity: 0.85;
 }
 
+/* Chart Double-path Line Glow effect */
+.trends-line-glow {
+  fill: none;
+  stroke-width: 8;
+  opacity: 0.25;
+  filter: blur(3.5px);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trends-line-glow.sum-line-glow {
+  stroke: #ff5e6c;
+}
+
+.trends-line-glow.score-line-glow {
+  stroke: #ffb703;
+}
+
 /* Chart lines */
 .trends-line {
   fill: none;
-  stroke-width: 3.5;
+  stroke-width: 2.8;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -242,7 +361,7 @@
 }
 
 .trends-dot:hover {
-  r: 8 !important;
+  r: 8.5 !important;
   stroke-width: 2.5;
 }
 
@@ -339,13 +458,34 @@
   min-width: 200px;
   padding: 12px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(10, 15, 29, 0.94);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 255, 255, 0.05) inset;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 255, 255, 0.04) inset;
   pointer-events: none;
-  transition: opacity 0.15s ease;
+  transition: left 0.1s cubic-bezier(0.25, 0.8, 0.25, 1), top 0.1s cubic-bezier(0.25, 0.8, 0.25, 1);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+
+/* Specialized theme shadows and borders for tooltip types */
+.trends-tooltip-portal.sum {
+  border-color: rgba(255, 94, 108, 0.3);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 94, 108, 0.08) inset;
+}
+
+.trends-tooltip-portal.absence {
+  border-color: rgba(46, 196, 182, 0.3);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(46, 196, 182, 0.08) inset;
+}
+
+.trends-tooltip-portal.absence.is-cold {
+  border-color: rgba(157, 78, 221, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(157, 78, 221, 0.12) inset;
+}
+
+.trends-tooltip-portal.score {
+  border-color: rgba(255, 183, 3, 0.3);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 183, 3, 0.08) inset;
 }
 
 .trends-tooltip-content {
@@ -521,5 +661,9 @@
 
   .trends-legend {
     gap: 12px;
+  }
+  
+  .trends-summary-cards {
+    grid-template-columns: 1fr;
   }
 }

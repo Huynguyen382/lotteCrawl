@@ -5,10 +5,14 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
   const [activeChart, setActiveChart] = useState('sum'); // 'sum' | 'absence' | 'score'
   const [drawLimit, setDrawLimit] = useState(50); // 30 | 50 | 100 | 0 (all)
 
-  const [hoveredPoint, setHoveredPoint] = useState(null); // { x, y, data } for tooltip
+  const [hoveredPoint, setHoveredPoint] = useState(null); // { x, y, type, isCold, data } for tooltip
 
   const mainLength = game === '535' ? 5 : 6;
   const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
+
+  const coldThreshold = useMemo(() => {
+    return Math.max(12, Math.round((visibleResults?.length || 0) * 0.15));
+  }, [visibleResults]);
 
   // 1. Helper function for scoring tickets
   function scoreTicket(ticketNums, config) {
@@ -182,7 +186,45 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
     })).sort((a, b) => a.num - b.num);
   }, [visibleResults, game]);
 
-  // 4. Render Sum Trend Line Chart
+  // 4. Compute metrics for summary cards
+  const avgSum = useMemo(() => {
+    if (trendData.length === 0) return 0;
+    return Math.round(trendData.reduce((acc, curr) => acc + curr.sum, 0) / trendData.length);
+  }, [trendData]);
+
+  const coldestNum = useMemo(() => {
+    if (absenceData.length === 0) return null;
+    return [...absenceData].sort((a, b) => b.count - a.count)[0];
+  }, [absenceData]);
+
+  const avgScore = useMemo(() => {
+    if (trendData.length === 0) return 0;
+    const total = trendData.reduce((acc, curr) => acc + curr.score, 0);
+    return (total / trendData.length).toFixed(1);
+  }, [trendData]);
+
+  // Unified MouseMove handler for coordinates-relative tooltip
+  const handleChartMouseMove = (e, type, pt, isCold = false) => {
+    const panel = e.currentTarget.closest('.trends-chart-panel');
+    if (!panel) return;
+    const panelRect = panel.getBoundingClientRect();
+    const relativeX = e.clientX - panelRect.left;
+    const relativeY = e.clientY - panelRect.top;
+    
+    // Prevent tooltip overflow using relative layout bounds
+    const xOffset = relativeX > panelRect.width * 0.7 ? -225 : 15;
+    const yOffset = relativeY < 145 ? 15 : -130;
+    
+    setHoveredPoint({
+      x: relativeX + xOffset,
+      y: relativeY + yOffset,
+      type,
+      isCold,
+      data: pt
+    });
+  };
+
+  // 5. Render Sum Trend Line Chart
   const renderSumChart = () => {
     if (trendData.length === 0) return <div className="trends-empty">Không có dữ liệu biểu đồ.</div>;
 
@@ -231,10 +273,6 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
               <stop offset="0%" stopColor="#ff5e6c" stopOpacity="0.4" />
               <stop offset="100%" stopColor="#ff5e6c" stopOpacity="0" />
             </linearGradient>
-            <filter id="glowSum" x="-10%" y="-10%" width="120%" height="120%">
-              <feGaussianBlur stdDeviation="3" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
           </defs>
 
           {/* Grid lines */}
@@ -294,11 +332,16 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
             />
           )}
 
-          {/* Sum Trend Line */}
+          {/* Sum Trend Line Glow (Double Path method for cross-platform hardware acceleration) */}
+          <path 
+            d={pathD} 
+            className="trends-line-glow sum-line-glow"
+          />
+
+          {/* Sum Trend Line Foreground */}
           <path 
             d={pathD} 
             className="trends-line sum-line"
-            filter="url(#glowSum)"
           />
 
           {/* Interactivity Dots */}
@@ -311,17 +354,9 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
                 key={idx}
                 cx={cx}
                 cy={cy}
-                r={hoveredPoint?.data?.drawId === pt.drawId ? 6 : 4}
+                r={hoveredPoint?.data?.drawId === pt.drawId ? 6.5 : 4}
                 className={`trends-dot ${isGolden ? 'golden' : 'outer'}`}
-                onMouseEnter={(e) => {
-                  const rect = e.target.getBoundingClientRect();
-                  setHoveredPoint({
-                    x: rect.left + window.scrollX - 10,
-                    y: rect.top + window.scrollY - 110,
-                    type: 'sum',
-                    data: pt
-                  });
-                }}
+                onMouseMove={(e) => handleChartMouseMove(e, 'sum', pt)}
                 onMouseLeave={() => setHoveredPoint(null)}
               />
             );
@@ -350,7 +385,7 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
     );
   };
 
-  // 5. Render Absence Bar Chart
+  // 6. Render Absence Bar Chart
   const renderAbsenceChart = () => {
     if (absenceData.length === 0) return <div className="trends-empty">Không có dữ liệu biểu đồ.</div>;
 
@@ -375,8 +410,6 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
       gridLines.push(v);
     }
 
-    const coldThreshold = Math.max(12, Math.round(visibleResults.length * 0.15));
-
     return (
       <div className="trends-chart-wrapper">
         <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="100%">
@@ -389,10 +422,6 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
               <stop offset="0%" stopColor="#9d4edd" stopOpacity="0.9" />
               <stop offset="100%" stopColor="#5a189a" stopOpacity="0.3" />
             </linearGradient>
-            <filter id="glowBar" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="2" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
           </defs>
 
           {/* Grid lines */}
@@ -432,16 +461,7 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
                 height={Math.max(1, barHeight)}
                 className={`trends-bar ${isCold ? 'cold' : 'normal'}`}
                 fill={isCold ? "url(#barColdGrad)" : "url(#barHotGrad)"}
-                filter={isCold ? "url(#glowBar)" : ""}
-                onMouseEnter={(e) => {
-                  const rect = e.target.getBoundingClientRect();
-                  setHoveredPoint({
-                    x: rect.left + window.scrollX - 10,
-                    y: rect.top + window.scrollY - 100,
-                    type: 'absence',
-                    data: pt
-                  });
-                }}
+                onMouseMove={(e) => handleChartMouseMove(e, 'absence', pt, isCold)}
                 onMouseLeave={() => setHoveredPoint(null)}
               />
             );
@@ -469,7 +489,7 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
     );
   };
 
-  // 6. Render AI V2 Score Trend Chart
+  // 7. Render AI V2 Score Trend Chart
   const renderScoreChart = () => {
     if (trendData.length === 0) return <div className="trends-empty">Không có dữ liệu biểu đồ.</div>;
 
@@ -496,10 +516,6 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
               <stop offset="0%" stopColor="#ffb703" stopOpacity="0.4" />
               <stop offset="100%" stopColor="#ffb703" stopOpacity="0" />
             </linearGradient>
-            <filter id="glowScore" x="-10%" y="-10%" width="120%" height="120%">
-              <feGaussianBlur stdDeviation="3" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
           </defs>
 
           {/* Grid lines */}
@@ -531,11 +547,16 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
             />
           )}
 
+          {/* Score line Glow (Double Path method for hardware acceleration) */}
+          <path 
+            d={pathD} 
+            className="trends-line-glow score-line-glow"
+          />
+
           {/* Score line */}
           <path 
             d={pathD} 
             className="trends-line score-line"
-            filter="url(#glowScore)"
           />
 
           {/* Dots */}
@@ -548,17 +569,9 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
                 key={idx}
                 cx={cx}
                 cy={cy}
-                r={hoveredPoint?.data?.drawId === pt.drawId ? 6 : 4}
+                r={hoveredPoint?.data?.drawId === pt.drawId ? 6.5 : 4}
                 className={`trends-dot ${isExcellent ? 'excellent' : 'regular'}`}
-                onMouseEnter={(e) => {
-                  const rect = e.target.getBoundingClientRect();
-                  setHoveredPoint({
-                    x: rect.left + window.scrollX - 10,
-                    y: rect.top + window.scrollY - 110,
-                    type: 'score',
-                    data: pt
-                  });
-                }}
+                onMouseMove={(e) => handleChartMouseMove(e, 'score', pt)}
                 onMouseLeave={() => setHoveredPoint(null)}
               />
             );
@@ -635,6 +648,31 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
         </div>
       </div>
 
+      {/* Summary Stat Cards overview row */}
+      <div className="trends-summary-cards">
+        <div className="trends-card glass-panel highlight-red">
+          <div className="trends-card-icon">📊</div>
+          <div className="trends-card-info">
+            <span className="trends-card-label">Tổng điểm trung bình</span>
+            <span className="trends-card-value">{avgSum}</span>
+          </div>
+        </div>
+        <div className="trends-card glass-panel highlight-purple">
+          <div className="trends-card-icon">❄️</div>
+          <div className="trends-card-info">
+            <span className="trends-card-label">Số lạnh nhất (Vắng {coldestNum?.count || 0} kỳ)</span>
+            <span className="trends-card-value">{coldestNum ? String(coldestNum.num).padStart(2, '0') : '--'}</span>
+          </div>
+        </div>
+        <div className="trends-card glass-panel highlight-gold">
+          <div className="trends-card-icon">🧠</div>
+          <div className="trends-card-info">
+            <span className="trends-card-label">Điểm AI V2 trung bình</span>
+            <span className="trends-card-value">{avgScore}<span className="trends-card-value-max">/13đ</span></span>
+          </div>
+        </div>
+      </div>
+
       <div className="glass-panel trends-chart-panel">
         {activeChart === 'sum' && (
           <>
@@ -669,75 +707,75 @@ function TrendAnalysisPanel({ game, visibleResults, statsConfig }) {
             </div>
           </>
         )}
+
+        {/* Floating Tooltip Component positioned relatively inside trends-chart-panel */}
+        {hoveredPoint && (
+          <div 
+            className={`trends-tooltip-portal glass-panel ${hoveredPoint.type} ${hoveredPoint.isCold ? 'is-cold' : ''}`}
+            style={{
+              position: 'absolute',
+              left: `${hoveredPoint.x}px`,
+              top: `${hoveredPoint.y}px`,
+              pointerEvents: 'none',
+              zIndex: 9999
+            }}
+          >
+            {hoveredPoint.type === 'sum' && (
+              <div className="trends-tooltip-content">
+                <div className="tooltip-title highlight-red">Kỳ quay #{hoveredPoint.data.drawIdStr}</div>
+                <div className="tooltip-date">Ngày: {hoveredPoint.data.dateStr}</div>
+                <div className="tooltip-value highlight-red">Tổng điểm: <strong>{hoveredPoint.data.sum}</strong></div>
+                <div className="tooltip-value">
+                  Vùng vàng: {
+                    (hoveredPoint.data.sum >= (statsConfig?.sums?.mean || 138) - 15 && 
+                     hoveredPoint.data.sum <= (statsConfig?.sums?.mean || 138) + 15) ? (
+                      <span className="badge-pass">✓ Đạt chuẩn</span>
+                    ) : (
+                      <span className="badge-fail">✗ Lệch chuẩn</span>
+                    )
+                  }
+                </div>
+                <div className="tooltip-balls">
+                  {hoveredPoint.data.numbers.map((n, i) => <span key={i} className="tooltip-ball">{n}</span>)}
+                </div>
+              </div>
+            )}
+
+            {hoveredPoint.type === 'absence' && (
+              <div className="trends-tooltip-content">
+                <div className="tooltip-title highlight-teal">Số chính: {String(hoveredPoint.data.num).padStart(2, '0')}</div>
+                <div className="tooltip-value">Số kỳ vắng: <strong>{hoveredPoint.data.count}</strong> kỳ</div>
+                <div className="tooltip-value">
+                  Trạng thái: {
+                    hoveredPoint.data.count >= coldThreshold ? (
+                      <span className="badge-cold">❄ Số lạnh sâu</span>
+                    ) : (
+                      <span className="badge-normal">✓ Bình thường</span>
+                    )
+                  }
+                </div>
+              </div>
+            )}
+
+            {hoveredPoint.type === 'score' && (
+              <div className="trends-tooltip-content">
+                <div className="tooltip-title highlight-gold">Kỳ quay #{hoveredPoint.data.drawIdStr}</div>
+                <div className="tooltip-date">Ngày: {hoveredPoint.data.dateStr}</div>
+                <div className="tooltip-value highlight-gold">Điểm AI V2: <strong>{hoveredPoint.data.score}/13</strong></div>
+                <div className="tooltip-reasons">
+                  {hoveredPoint.data.reasons.length > 0 ? (
+                    hoveredPoint.data.reasons.map((r, i) => (
+                      <span key={i} className="tooltip-reason-pill">✓ {r.text}</span>
+                    ))
+                  ) : (
+                    <span className="tooltip-reason-pill neutral">Không đạt quy tắc nào</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-
-      {/* Floating Tooltip Component */}
-      {hoveredPoint && (
-        <div 
-          className="trends-tooltip-portal glass-panel"
-          style={{
-            position: 'absolute',
-            left: `${hoveredPoint.x}px`,
-            top: `${hoveredPoint.y}px`,
-            pointerEvents: 'none',
-            zIndex: 9999
-          }}
-        >
-          {hoveredPoint.type === 'sum' && (
-            <div className="trends-tooltip-content">
-              <div className="tooltip-title">Kỳ quay #{hoveredPoint.data.drawIdStr}</div>
-              <div className="tooltip-date">Ngày: {hoveredPoint.data.dateStr}</div>
-              <div className="tooltip-value highlight-red">Tổng điểm: <strong>{hoveredPoint.data.sum}</strong></div>
-              <div className="tooltip-value">
-                Vùng vàng: {
-                  (hoveredPoint.data.sum >= (statsConfig?.sums?.mean || 138) - 15 && 
-                   hoveredPoint.data.sum <= (statsConfig?.sums?.mean || 138) + 15) ? (
-                    <span className="badge-pass">✓ Đạt chuẩn</span>
-                  ) : (
-                    <span className="badge-fail">✗ Lệch chuẩn</span>
-                  )
-                }
-              </div>
-              <div className="tooltip-balls">
-                {hoveredPoint.data.numbers.map((n, i) => <span key={i} className="tooltip-ball">{n}</span>)}
-              </div>
-            </div>
-          )}
-
-          {hoveredPoint.type === 'absence' && (
-            <div className="trends-tooltip-content">
-              <div className="tooltip-title highlight-teal">Số chính: {String(hoveredPoint.data.num).padStart(2, '0')}</div>
-              <div className="tooltip-value">Số kỳ vắng: <strong>{hoveredPoint.data.count}</strong> kỳ</div>
-              <div className="tooltip-value">
-                Trạng thái: {
-                  hoveredPoint.data.count >= Math.max(12, Math.round(visibleResults.length * 0.15)) ? (
-                    <span className="badge-cold">❄ Số lạnh sâu</span>
-                  ) : (
-                    <span className="badge-normal">✓ Bình thường</span>
-                  )
-                }
-              </div>
-            </div>
-          )}
-
-          {hoveredPoint.type === 'score' && (
-            <div className="trends-tooltip-content">
-              <div className="tooltip-title">Kỳ quay #{hoveredPoint.data.drawIdStr}</div>
-              <div className="tooltip-date">Ngày: {hoveredPoint.data.dateStr}</div>
-              <div className="tooltip-value highlight-gold">Điểm AI V2: <strong>{hoveredPoint.data.score}/13</strong></div>
-              <div className="tooltip-reasons">
-                {hoveredPoint.data.reasons.length > 0 ? (
-                  hoveredPoint.data.reasons.map((r, i) => (
-                    <span key={i} className="tooltip-reason-pill">✓ {r.text}</span>
-                  ))
-                ) : (
-                  <span className="tooltip-reason-pill neutral">Không đạt quy tắc nào</span>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
