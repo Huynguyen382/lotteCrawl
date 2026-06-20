@@ -81,6 +81,40 @@ const axiosInstance = axios.create({
     validateStatus: (status) => status < 500,
 });
 
+// Global variables for free Vietnamese proxy rotating fallback
+let cachedVnProxy = null;
+let lastProxyFetchTime = 0;
+let vnProxyList = [];
+
+// Fetch a list of active Vietnamese HTTP proxies from ProxyScrape
+async function getVnProxyList() {
+    const now = Date.now();
+    // Cache the proxy list for 10 minutes to avoid API spamming
+    if (vnProxyList.length > 0 && (now - lastProxyFetchTime < 10 * 60 * 1000)) {
+        return vnProxyList;
+    }
+    
+    try {
+        console.log('[proxy-rotator] Đang tải danh sách proxy Việt Nam từ ProxyScrape...');
+        const apiRes = await axiosInstance.get('https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text&country=vn&protocol=http', { timeout: 10000 });
+        if (apiRes.status === 200 && apiRes.data) {
+            const list = apiRes.data.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0 && line.startsWith('http'));
+            
+            if (list.length > 0) {
+                vnProxyList = list;
+                lastProxyFetchTime = now;
+                console.log(`[proxy-rotator] Đã tìm thấy ${vnProxyList.length} proxy HTTP VN.`);
+                return vnProxyList;
+            }
+        }
+    } catch (e) {
+        console.error('[proxy-rotator] Lỗi tải danh sách proxy VN:', e.message);
+    }
+    return [];
+}
+
 // Retry wrapper - thử lại tối đa 3 lần nếu thất bại
 async function fetchWithRetry(url, retries = 3) {
     const finalUrl = buildUrl(url);
@@ -89,41 +123,111 @@ async function fetchWithRetry(url, retries = 3) {
     const useScraperApi = !useScrapeDo && !useGasProxy && !!process.env.SCRAPER_API_KEY;
     const httpProxy = process.env.HTTP_PROXY;
 
-    let agent = undefined;
-    if (!useScrapeDo && !useGasProxy && !useScraperApi && httpProxy) {
-        try {
-            agent = new HttpsProxyAgent(httpProxy);
-            console.log(`[proxy] Sử dụng HTTP Proxy: ${httpProxy}`);
-        } catch (e) {
-            console.error('Lỗi khởi tạo HTTP Proxy Agent:', e.message);
+    // A. Nếu có cấu hình proxy trả phí/GAS/env proxy → Ưu tiên sử dụng trước
+    if (useScrapeDo || useGasProxy || useScraperApi || httpProxy) {
+        let agent = undefined;
+        if (!useScrapeDo && !useGasProxy && !useScraperApi && httpProxy) {
+            try {
+                agent = new HttpsProxyAgent(httpProxy);
+                console.log(`[proxy] Sử dụng HTTP Proxy: ${httpProxy}`);
+            } catch (e) {
+                console.error('Lỗi khởi tạo HTTP Proxy Agent:', e.message);
+            }
         }
+
+        for (let i = 0; i < retries; i++) {
+            try {
+                const config = {
+                    headers: (useScrapeDo || useScraperApi || useGasProxy) ? {
+                        'bypass-tunnel-reminder': 'true'
+                    } : HEADERS,
+                };
+                if (agent) {
+                    config.httpsAgent = agent;
+                }
+
+                const response = await axiosInstance.get(finalUrl, config);
+                if (response.status === 200) return response;
+                throw new Error(`HTTP ${response.status}`);
+            } catch (err) {
+                if (i < retries - 1) {
+                    const delay = (i + 1) * 1000;
+                    console.log(`Retry ${i + 1}/${retries} cho ${url} sau ${delay}ms...`);
+                    await sleep(delay);
+                } else {
+                    throw err;
+                }
+            }
+        }
+        return;
     }
 
-    for (let i = 0; i < retries; i++) {
-        try {
-            const config = {
-                // Scrape.do, ScraperAPI, GAS tự xử lý headers
-                headers: (useScrapeDo || useScraperApi || useGasProxy) ? {
-                    'bypass-tunnel-reminder': 'true'
-                } : HEADERS,
-            };
-            if (agent) {
-                config.httpsAgent = agent;
-            }
+    // B. Nếu không cấu hình proxy → Thử gọi trực tiếp trước (phù hợp chạy Local tại Việt Nam)
+    try {
+        console.log(`[direct] Đang gọi trực tiếp: ${url}`);
+        const response = await axiosInstance.get(url, { headers: HEADERS, timeout: 15000 });
+        if (response.status === 200) {
+            return response;
+        }
+    } catch (err) {
+        const isBlocked = !err.response || err.response.status === 403 || err.response.status === 429 || err.code === 'ECONNABORTED';
+        if (!isBlocked) {
+            throw err;
+        }
+        console.log(`[direct] Kết nối trực tiếp thất bại (${err.message}). Tự động kích hoạt chế độ xoay vòng proxy VN...`);
+    }
 
-            const response = await axiosInstance.get(finalUrl, config);
-            if (response.status === 200) return response;
-            throw new Error(`HTTP ${response.status}`);
+    // C. Sử dụng cơ chế xoay vòng proxy Việt Nam miễn phí (Thích hợp cho Render/Singapore)
+    
+    // C1. Thử dùng lại proxy đã hoạt động trước đó (nếu có)
+    if (cachedVnProxy) {
+        try {
+            console.log(`[proxy-rotator] Thử dùng cached proxy VN: ${cachedVnProxy}`);
+            const agent = new HttpsProxyAgent(cachedVnProxy);
+            const response = await axiosInstance.get(url, { 
+                headers: HEADERS, 
+                httpsAgent: agent,
+                timeout: 20000 
+            });
+            if (response.status === 200) {
+                return response;
+            }
         } catch (err) {
-            if (i < retries - 1) {
-                const delay = (i + 1) * 1000;
-                console.log(`Retry ${i + 1}/${retries} cho ${url} sau ${delay}ms...`);
-                await sleep(delay);
-            } else {
-                throw err;
-            }
+            console.log(`[proxy-rotator] Cached proxy VN ${cachedVnProxy} lỗi: ${err.message}. Xóa cache.`);
+            cachedVnProxy = null;
         }
     }
+
+    // C2. Lấy danh sách proxy và duyệt tuần tự tìm proxy hoạt động
+    const proxies = await getVnProxyList();
+    if (proxies.length === 0) {
+        throw new Error("Không thể tải danh sách proxy VN và gọi trực tiếp thất bại.");
+    }
+
+    const maxAttempts = Math.min(proxies.length, 12);
+    console.log(`[proxy-rotator] Đang thử kết nối qua tối đa ${maxAttempts} proxy VN...`);
+
+    for (let i = 0; i < maxAttempts; i++) {
+        const proxy = proxies[i];
+        try {
+            console.log(`[proxy-rotator] Thử proxy [${i + 1}/${maxAttempts}]: ${proxy}`);
+            const agent = new HttpsProxyAgent(proxy);
+            const response = await axiosInstance.get(url, { 
+                headers: HEADERS, 
+                httpsAgent: agent,
+                timeout: 25000 
+            });
+            if (response.status === 200) {
+                console.log(`[proxy-rotator] ✓ Kết nối thành công! Lưu proxy này làm cache: ${proxy}`);
+                cachedVnProxy = proxy;
+                return response;
+            }
+        } catch (err) {
+            console.log(`[proxy-rotator] Proxy ${proxy} thất bại: ${err.message}`);
+        }
+    }
+
+    throw new Error(`Đã thử ${maxAttempts} proxy VN khác nhau từ ProxyScrape nhưng đều thất bại.`);
 }
 
 /**
