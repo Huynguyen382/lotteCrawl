@@ -75,15 +75,25 @@ async function scrapeStream(req, res) {
         sendEvent('log', { message: 'Đang kết nối đến cơ sở dữ liệu...' });
         
         let latestId = null;
-        let latestInfo = await db.getLatestDraw(game);
-        if (latestInfo) {
-            latestId = latestInfo.drawId;
-            sendEvent('log', { message: `Kỳ quay mới nhất hiện tại (từ DB): #${latestId} (${latestInfo.dateStr})` });
-        } else {
-            sendEvent('log', { message: 'Không tìm thấy dữ liệu trong DB. Đang cào thông tin mới nhất từ Vietlott...' });
+        let latestInfo = null;
+        sendEvent('log', { message: 'Đang lấy thông tin kỳ quay mới nhất từ hệ thống trực tuyến (Vietlott/XSKT)...' });
+        try {
             latestInfo = await fetchLatestDrawInfo(game);
             latestId = latestInfo.drawId;
-            sendEvent('log', { message: `Kỳ quay mới nhất hiện tại (cào mới): #${latestId} (${latestInfo.dateStr})` });
+            sendEvent('log', { message: `Kỳ quay mới nhất trực tuyến: #${latestId} (${latestInfo.dateStr})` });
+        } catch (e) {
+            sendEvent('log', { message: `Không thể lấy kỳ quay mới nhất trực tuyến (${e.message}). Sử dụng dữ liệu mới nhất từ DB làm thay thế.` });
+            latestInfo = await db.getLatestDraw(game);
+            if (latestInfo) {
+                latestId = latestInfo.drawId;
+                sendEvent('log', { message: `Kỳ quay mới nhất từ DB: #${latestId} (${latestInfo.dateStr})` });
+            }
+        }
+
+        if (!latestId) {
+            sendEvent('error', { message: 'Không thể xác định kỳ quay mới nhất để tìm kiếm khoảng ngày.' });
+            clearInterval(keepAliveInterval);
+            return res.end();
         }
 
         sendEvent('log', { message: `Đang tìm kỳ quay bắt đầu cho ngày ${startDate}...` });
