@@ -8,18 +8,18 @@ async function test() {
         const latestMega = await fetchLatestDrawInfo('645');
         console.log('Latest Mega:', latestMega);
 
-        console.log('\n--- TEST 2: Fetch Draw Detail (Mega #1200) ---');
-        const detailMega = await fetchDrawDetail('645', 1200);
-        console.log('Mega Draw 1200 details:', {
+        console.log('\n--- TEST 2: Fetch Draw Detail (Mega #1524) ---');
+        const detailMega = await fetchDrawDetail('645', 1524, false);
+        console.log('Mega Draw 1524 details:', {
             drawId: detailMega.drawId,
             dateStr: detailMega.dateStr,
             numbers: detailMega.numbers,
             jackpotWinners: detailMega.prizes[0]
         });
 
-        console.log('\n--- TEST 3: Fetch Draw Detail (Power #1000) ---');
-        const detailPower = await fetchDrawDetail('655', 1000);
-        console.log('Power Draw 1000 details:', {
+        console.log('\n--- TEST 3: Fetch Draw Detail (Power #1360) ---');
+        const detailPower = await fetchDrawDetail('655', 1360, false);
+        console.log('Power Draw 1360 details:', {
             drawId: detailPower.drawId,
             dateStr: detailPower.dateStr,
             numbers: detailPower.numbers,
