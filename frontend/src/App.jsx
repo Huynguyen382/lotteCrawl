@@ -22,6 +22,7 @@ function App() {
     return new Date().toISOString().split('T')[0];
   });
   const [isScraping, setIsScraping] = useState(false);
+  const [crawlOnline, setCrawlOnline] = useState(false);
   const [progress, setProgress] = useState({
     currentId: 0,
     progress: 0,
@@ -104,7 +105,7 @@ function App() {
       eventSourceRef.current.close();
     }
 
-    const url = `${API_BASE}/api/scrape-stream?game=${game}&startDate=${startDate}&endDate=${endDate}`;
+    const url = `${API_BASE}/api/scrape-stream?game=${game}&startDate=${startDate}&endDate=${endDate}&mode=${crawlOnline ? 'xskt' : 'db'}`;
     const es = new EventSource(url);
     eventSourceRef.current = es;
 
@@ -419,6 +420,27 @@ function App() {
                 onChange={(e) => setEndDate(e.target.value)}
                 disabled={isScraping}
               />
+            </div>
+
+            <div className="form-group" style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0' }}>
+              <span style={{ fontSize: '0.9rem', color: 'var(--text-main)', fontWeight: '600' }}>Cào trực tuyến (XSKT.com.vn)</span>
+              <div className="switch-container">
+                <input
+                  type="checkbox"
+                  id="crawlOnlineSwitch"
+                  checked={crawlOnline}
+                  onChange={(e) => setCrawlOnline(e.target.checked)}
+                  disabled={isScraping}
+                  style={{ display: 'none' }}
+                />
+                <label
+                  htmlFor="crawlOnlineSwitch"
+                  className={`switch-track ${crawlOnline ? 'switch-active' : ''}`}
+                  style={{ pointerEvents: isScraping ? 'none' : 'auto', opacity: isScraping ? 0.6 : 1 }}
+                >
+                  <span className="switch-thumb"></span>
+                </label>
+              </div>
             </div>
 
             {/* Action Buttons */}

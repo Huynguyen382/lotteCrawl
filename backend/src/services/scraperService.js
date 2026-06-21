@@ -130,7 +130,11 @@ async function fetchWithRetry(url, retries = 3) {
  * Fetch the latest draw ID from Vietlott site
  * @param {string} gameType - '645', '655' or '535'
  */
-async function fetchLatestDrawInfo(gameType) {
+async function fetchLatestDrawInfo(gameType, forceXskt = false) {
+    if (forceXskt) {
+        console.log(`[xskt-direct] Bật chế độ cào trực tiếp từ XSKT cho game ${gameType}`);
+        return await fetchLatestDrawInfoFromXskt(gameType);
+    }
     try {
         const url = `https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/${gameType}`;
         const response = await fetchWithRetry(url);
@@ -187,10 +191,15 @@ async function fetchLatestDrawInfo(gameType) {
  * @param {number} drawId - Draw ID
  * @param {boolean} useCache - Whether to check local cache
  */
-async function fetchDrawDetail(gameType, drawId, useCache = true) {
+async function fetchDrawDetail(gameType, drawId, useCache = true, forceXskt = false) {
     if (useCache) {
         const cached = await db.getDraw(gameType, drawId);
         if (cached) return cached;
+    }
+
+    if (forceXskt) {
+        console.log(`[xskt-direct] Cào chi tiết kỳ quay #${drawId} trực tiếp từ XSKT...`);
+        return await fetchDrawDetailFromXskt(gameType, drawId);
     }
 
     const paddedId = padDrawId(drawId);
@@ -298,13 +307,13 @@ async function fetchDrawDetail(gameType, drawId, useCache = true) {
 /**
  * Get date of a draw ID (using cache when possible)
  */
-async function getDrawDateYmd(gameType, drawId) {
+async function getDrawDateYmd(gameType, drawId, forceXskt = false) {
     const cached = await db.getDraw(gameType, drawId);
     if (cached) {
         return cached.dateYmd;
     }
     try {
-        const detail = await fetchDrawDetail(gameType, drawId, true);
+        const detail = await fetchDrawDetail(gameType, drawId, true, forceXskt);
         return detail.dateYmd;
     } catch (error) {
         return null;
@@ -314,7 +323,7 @@ async function getDrawDateYmd(gameType, drawId) {
 /**
  * Find boundary draw ID for a date using binary search
  */
-async function findDrawIdForDate(gameType, targetDateYmd, boundaryType, latestId, onProgress) {
+async function findDrawIdForDate(gameType, targetDateYmd, boundaryType, latestId, onProgress, forceXskt = false) {
     const allDraws = (await db.getAllDrawsMetadata(gameType)).filter(d => d.drawId <= latestId);
     
     let left = 1;
@@ -366,7 +375,7 @@ async function findDrawIdForDate(gameType, targetDateYmd, boundaryType, latestId
             onProgress(`Tìm kiếm kỳ quay: Kiểm tra Kỳ #${mid}...`);
         }
 
-        const midDateYmd = await getDrawDateYmd(gameType, mid);
+        const midDateYmd = await getDrawDateYmd(gameType, mid, forceXskt);
         if (!midDateYmd) {
             if (boundaryType === 'start') {
                 left = mid + 1;

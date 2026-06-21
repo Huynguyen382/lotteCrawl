@@ -33,7 +33,8 @@ async function getLatest(req, res) {
 
 // 2. SSE Scrape Stream
 async function scrapeStream(req, res) {
-    const { game, startDate, endDate } = req.query;
+    const { game, startDate, endDate, mode } = req.query;
+    const crawlMode = mode || 'db';
 
     if (!game || !startDate || !endDate) {
         res.setHeader('Content-Type', 'text/plain');
@@ -72,13 +73,103 @@ async function scrapeStream(req, res) {
     });
 
     try {
+        if (crawlMode === 'db') {
+            sendEvent('log', { message: 'Đang truy vấn dữ liệu từ cơ sở dữ liệu...' });
+            
+            let draws = [];
+            if (db.isPostgres()) {
+                const queryRes = await db.query(
+                    `SELECT draw_id as "drawId", draw_id_str as "drawIdStr", date_str as "dateStr", date_ymd as "dateYmd", numbers, prizes, scraped_at as "scrapedAt"
+                     FROM draw_results
+                     WHERE game = $1 AND date_ymd >= $2 AND date_ymd <= $3
+                     ORDER BY draw_id ASC`,
+                    [game, startDate, endDate]
+                );
+                draws = queryRes.rows;
+            } else {
+                const gameCache = db.getLocalCache()[game] || {};
+                draws = Object.values(gameCache)
+                    .filter(d => d.dateYmd >= startDate && d.dateYmd <= endDate)
+                    .sort((a, b) => a.drawId - b.drawId);
+            }
+
+            sendEvent('log', { message: `Tìm thấy ${draws.length} kỳ quay trong cơ sở dữ liệu.` });
+
+            if (draws.length === 0) {
+                sendEvent('complete', { startId: 0, endId: 0, totalCrawled: 0, totalErrors: 0, results: [] });
+                clearInterval(keepAliveInterval);
+                return res.end();
+            }
+
+            const startId = draws[0].drawId;
+            const endId = draws[draws.length - 1].drawId;
+
+            // Calculate absences
+            sendEvent('log', { message: 'Đang tính toán chỉ số vắng mặt (Tổng Vắng)...' });
+            try {
+                const allHistory = await db.getDrawsInRange(game, 1, endId);
+                allHistory.sort((a, b) => a.drawId - b.drawId);
+
+                const lastSeenIndex = {};
+                const absencesByDrawId = {};
+
+                allHistory.forEach((draw, idx) => {
+                    const currentNums = draw.numbers.map(n => parseInt(n, 10));
+                    const individualAbsences = currentNums.map((num) => {
+                        if (lastSeenIndex[num] !== undefined) {
+                            const prevIdx = lastSeenIndex[num];
+                            return idx - prevIdx - 1;
+                        } else {
+                            return 'N/A';
+                        }
+                    });
+
+                    const mainLength = game === '535' ? 5 : 6;
+                    const mainAbs = individualAbsences.slice(0, mainLength);
+                    const hasNA = mainAbs.some(val => val === 'N/A');
+                    const totalAbsence = hasNA ? 'N/A' : mainAbs.reduce((sum, val) => sum + val, 0);
+
+                    absencesByDrawId[draw.drawId] = {
+                        individualAbsences,
+                        totalAbsence
+                    };
+
+                    currentNums.forEach((num) => {
+                        lastSeenIndex[num] = idx;
+                    });
+                });
+
+                draws.forEach((draw) => {
+                    const abs = absencesByDrawId[draw.drawId];
+                    if (abs) {
+                        draw.individualAbsences = abs.individualAbsences;
+                        draw.totalAbsence = abs.totalAbsence;
+                    }
+                });
+            } catch (e) {
+                console.error('Lỗi tính toán khoảng vắng mặt trong scrape-stream (DB mode):', e.message);
+                sendEvent('log', { message: `Cảnh báo: Không thể tính toán khoảng vắng mặt: ${e.message}` });
+            }
+
+            sendEvent('complete', { 
+                startId, 
+                endId, 
+                totalCrawled: draws.length,
+                totalErrors: 0,
+                results: draws 
+            });
+            clearInterval(keepAliveInterval);
+            return res.end();
+        }
+
+        // Nếu crawlMode === 'xskt' (Bật chế độ cào trực tuyến từ XSKT)
         sendEvent('log', { message: 'Đang kết nối đến cơ sở dữ liệu...' });
         
         let latestId = null;
         let latestInfo = null;
-        sendEvent('log', { message: 'Đang lấy thông tin kỳ quay mới nhất từ hệ thống trực tuyến (Vietlott/XSKT)...' });
+        sendEvent('log', { message: 'Đang lấy thông tin kỳ quay mới nhất từ hệ thống trực tuyến (XSKT.com.vn)...' });
         try {
-            latestInfo = await fetchLatestDrawInfo(game);
+            latestInfo = await fetchLatestDrawInfo(game, true);
             latestId = latestInfo.drawId;
             sendEvent('log', { message: `Kỳ quay mới nhất trực tuyến: #${latestId} (${latestInfo.dateStr})` });
         } catch (e) {
@@ -99,12 +190,12 @@ async function scrapeStream(req, res) {
         sendEvent('log', { message: `Đang tìm kỳ quay bắt đầu cho ngày ${startDate}...` });
         const startId = await findDrawIdForDate(game, startDate, 'start', latestId, (msg) => {
             sendEvent('log', { message: msg });
-        });
+        }, true); // forceXskt = true
 
         sendEvent('log', { message: `Đang tìm kỳ quay kết thúc cho ngày ${endDate}...` });
         const endId = await findDrawIdForDate(game, endDate, 'end', latestId, (msg) => {
             sendEvent('log', { message: msg });
-        });
+        }, true); // forceXskt = true
 
         sendEvent('log', { message: `Phạm vi kỳ quay xác định: #${startId} đến #${endId}` });
 
@@ -133,7 +224,7 @@ async function scrapeStream(req, res) {
         
         const fetchOne = async (id) => {
             try {
-                const drawDetail = await fetchDrawDetail(game, id, true);
+                const drawDetail = await fetchDrawDetail(game, id, true, true); // forceXskt = true
                 results.push(drawDetail);
                 console.log(`✓ Scraped draw #${id} successfully`);
                 return { success: true, id };
