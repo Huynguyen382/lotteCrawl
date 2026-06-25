@@ -5,11 +5,13 @@ function StatsPanel({ game, visibleResults }) {
   const [statsViewMode, setStatsViewMode] = useState('table'); // 'table' or 'chart'
   const [statsType, setStatsType] = useState('main'); // 'main' or 'special'
   const [sortBy, setSortBy] = useState('number');
+  const [calculationMode, setCalculationMode] = useState('common'); // 'common' or 'separate'
 
   // Reset stats configurations when game type changes
   useEffect(() => {
     setStatsType('main');
     setStatsSearchQuery('');
+    setCalculationMode('common');
   }, [game]);
 
   // Compute absent draws for main numbers (1-45 Mega, 1-55 Power, 1-35 Lotto)
@@ -25,8 +27,11 @@ function StatsPanel({ game, visibleResults }) {
       const numStr = String(i).padStart(2, '0');
       
       const firstSeenIndex = reversedResults.findIndex(draw => {
-        const mainNumbers = draw.numbers.slice(0, mainLength);
-        return mainNumbers.some(num => parseInt(num, 10) === i);
+        if (!draw.numbers) return false;
+        const checkNumbers = (game !== '645' && calculationMode === 'common')
+          ? draw.numbers
+          : draw.numbers.slice(0, mainLength);
+        return checkNumbers.some(num => parseInt(num, 10) === i);
       });
       
       if (firstSeenIndex !== -1) {
@@ -62,8 +67,13 @@ function StatsPanel({ game, visibleResults }) {
       const numStr = String(i).padStart(2, '0');
       
       const firstSeenIndex = reversedResults.findIndex(draw => {
-        if (!draw.numbers || draw.numbers.length <= specialIdx) return false;
-        return parseInt(draw.numbers[specialIdx], 10) === i;
+        if (!draw.numbers) return false;
+        if (calculationMode === 'common') {
+          return draw.numbers.some(num => parseInt(num, 10) === i);
+        } else {
+          if (draw.numbers.length <= specialIdx) return false;
+          return parseInt(draw.numbers[specialIdx], 10) === i;
+        }
       });
       
       if (firstSeenIndex !== -1) {
@@ -122,7 +132,7 @@ function StatsPanel({ game, visibleResults }) {
     <div className="stats-wrapper">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '0 8px', gap: '16px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-          Tính toán vắng mặt dựa trên **{visibleResults.length}** kỳ quay đã cào.
+          Tính toán vắng mặt dựa trên **{visibleResults.length}** kỳ quay ({game !== '645' ? `Chế độ ${calculationMode === 'common' ? 'Chung' : 'Riêng'}` : 'Số chính'}).
         </span>
         
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -251,6 +261,46 @@ function StatsPanel({ game, visibleResults }) {
                 }}
               >
                 Số ĐB
+              </button>
+            </div>
+          )}
+
+          {/* Calculation Mode Toggle (Only for games with special numbers: Power 6/55 and Lotto 5/35) */}
+          {game !== '645' && (
+            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px', border: '1px solid var(--border-color)' }}>
+              <button
+                className={`toggle-btn ${calculationMode === 'separate' ? 'active' : ''}`}
+                onClick={() => setCalculationMode('separate')}
+                style={{
+                  background: calculationMode === 'separate' ? 'var(--primary)' : 'none',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Chế độ riêng
+              </button>
+              <button
+                className={`toggle-btn ${calculationMode === 'common' ? 'active' : ''}`}
+                onClick={() => setCalculationMode('common')}
+                style={{
+                  background: calculationMode === 'common' ? 'var(--primary)' : 'none',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Chế độ chung
               </button>
             </div>
           )}
