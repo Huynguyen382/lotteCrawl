@@ -288,6 +288,40 @@ function App() {
     }
 
     return true;
+  }).sort((a, b) => {
+    if (!searchQuery.trim()) return a.drawId - b.drawId;
+
+    const queryParts = searchQuery.toLowerCase().split(/[\s,.-]+/).filter(Boolean);
+    const searchNums = [];
+    queryParts.forEach((part) => {
+      const isPureNumber = /^\d+$/.test(part);
+      const num = parseInt(part, 10);
+      if (isPureNumber && !isNaN(num) && num >= 1 && num <= 55) {
+        searchNums.push(num);
+      }
+    });
+
+    if (searchNums.length === 0) {
+      return a.drawId - b.drawId;
+    }
+
+    const mainLength = game === '535' ? 5 : 6;
+
+    const getPriority = (draw) => {
+      if (!draw.numbers) return 0;
+      const mainNums = draw.numbers.slice(0, mainLength).map(Number);
+      const hasAllInMain = searchNums.every(n => mainNums.includes(n));
+      return hasAllInMain ? 1 : 0;
+    };
+
+    const pA = getPriority(a);
+    const pB = getPriority(b);
+
+    if (pA !== pB) {
+      return pA - pB; // 0 (special match only) comes before 1 (main match) so main matches are last in list (rendered first on reverse)
+    }
+
+    return a.drawId - b.drawId;
   });
 
   // Find previous draw index to calculate diff
