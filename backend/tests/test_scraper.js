@@ -38,6 +38,33 @@ async function test() {
             numbers: drawDetail.numbers
         });
 
+        console.log('\n--- TEST 5: Fetch Draw Detail from XSKT directly (Mega #1530) ---');
+        console.log('Cào từ XSKT trực tiếp (sẽ tải trang XSKT và lưu cache)...');
+        const detail1530 = await fetchDrawDetail('645', 1530, false, true); // forceXskt = true
+        console.log('Mega Draw 1530 details:', {
+            drawId: detail1530.drawId,
+            dateStr: detail1530.dateStr,
+            numbers: detail1530.numbers
+        });
+
+        console.log('\n--- TEST 6: Fetch Draw Detail from XSKT Cache (Mega #1531) ---');
+        console.log('Cào từ XSKT trực tiếp (kỳ này phải được trả về từ cache, không gọi HTTP tới XSKT)...');
+        const detail1531 = await fetchDrawDetail('645', 1531, false, true); // forceXskt = true
+        console.log('Mega Draw 1531 details:', {
+            drawId: detail1531.drawId,
+            dateStr: detail1531.dateStr,
+            numbers: detail1531.numbers
+        });
+
+        console.log('\n--- TEST 7: Fallback to Vietlott when XSKT fails (Mega #1000) ---');
+        console.log('Cào kỳ cũ (#1000) với forceXskt = true (sẽ lỗi ở XSKT, tự fallback sang Vietlott)...');
+        const detail1000 = await fetchDrawDetail('645', 1000, false, true); // forceXskt = true
+        console.log('Mega Draw 1000 details:', {
+            drawId: detail1000.drawId,
+            dateStr: detail1000.dateStr,
+            numbers: detail1000.numbers
+        });
+
     } catch (e) {
         console.error('Test failed:', e);
     }

@@ -5,6 +5,13 @@ const path = require('path');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const db = require('../config/db');
 
+// In-memory cache for parsed XSKT draws to avoid redundant HTTP requests
+const xsktParsedCache = {
+    '645': null,
+    '655': null,
+    '535': null
+};
+
 // Utility helper to add padding
 function padDrawId(drawId) {
     return String(drawId).padStart(5, '0');
@@ -101,11 +108,26 @@ async function fetchWithRetry(url, retries = 3) {
 
     for (let i = 0; i < retries; i++) {
         try {
-            const config = {
-                // Scrape.do, ScraperAPI, GAS tự xử lý headers
-                headers: (useScrapeDo || useScraperApi || useGasProxy) ? {
+            let requestHeaders;
+            if (useScrapeDo || useScraperApi || useGasProxy) {
+                requestHeaders = {
                     'bypass-tunnel-reminder': 'true'
-                } : HEADERS,
+                };
+            } else if (url.includes('xskt.com.vn')) {
+                requestHeaders = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                    'Referer': 'https://xskt.com.vn/',
+                };
+            } else {
+                requestHeaders = HEADERS;
+            }
+
+            const config = {
+                headers: requestHeaders,
             };
             if (agent) {
                 config.httpsAgent = agent;
@@ -130,57 +152,73 @@ async function fetchWithRetry(url, retries = 3) {
  * Fetch the latest draw ID from Vietlott site
  * @param {string} gameType - '645', '655' or '535'
  */
+async function fetchLatestDrawInfoFromVietlott(gameType) {
+    const url = `https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/${gameType}`;
+    const response = await fetchWithRetry(url);
+    const $ = cheerio.load(response.data);
+    
+    let drawIdText = '';
+    let drawDateText = '';
+
+    // Look for headers containing draw details
+    $('h5').each((i, el) => {
+        const text = $(el).text().trim();
+        // Match "Kỳ quay thưởng #01519 ngày 24/05/2026"
+        const match = text.match(/Kỳ quay thưởng\s+#(\d+)\s+ngày\s+(\d{2}\/\d{2}\/\d{4})/i);
+        if (match) {
+            drawIdText = match[1];
+            drawDateText = match[2];
+        }
+    });
+
+    if (!drawIdText) {
+        // Backup selector if standard h5 text doesn't match
+        $('b').each((i, el) => {
+            const text = $(el).text().trim();
+            if (text.startsWith('#') && text.length === 6) {
+                drawIdText = text.substring(1);
+            }
+        });
+    }
+
+    const drawId = parseInt(drawIdText, 10);
+    if (!drawId || isNaN(drawId)) {
+        throw new Error(`Could not parse latest draw ID for game ${gameType}`);
+    }
+
+    return {
+        drawId,
+        dateStr: drawDateText,
+        dateYmd: dateToYmd(drawDateText)
+    };
+}
+
 async function fetchLatestDrawInfo(gameType, forceXskt = false) {
     if (forceXskt) {
         console.log(`[xskt-direct] Bật chế độ cào trực tiếp từ XSKT cho game ${gameType}`);
-        return await fetchLatestDrawInfoFromXskt(gameType);
-    }
-    try {
-        const url = `https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/${gameType}`;
-        const response = await fetchWithRetry(url);
-        const $ = cheerio.load(response.data);
-        
-        let drawIdText = '';
-        let drawDateText = '';
-
-        // Look for headers containing draw details
-        $('h5').each((i, el) => {
-            const text = $(el).text().trim();
-            // Match "Kỳ quay thưởng #01519 ngày 24/05/2026"
-            const match = text.match(/Kỳ quay thưởng\s+#(\d+)\s+ngày\s+(\d{2}\/\d{2}\/\d{4})/i);
-            if (match) {
-                drawIdText = match[1];
-                drawDateText = match[2];
-            }
-        });
-
-        if (!drawIdText) {
-            // Backup selector if standard h5 text doesn't match
-            $('b').each((i, el) => {
-                const text = $(el).text().trim();
-                if (text.startsWith('#') && text.length === 6) {
-                    drawIdText = text.substring(1);
-                }
-            });
-        }
-
-        const drawId = parseInt(drawIdText, 10);
-        if (!drawId || isNaN(drawId)) {
-            throw new Error(`Could not parse latest draw ID for game ${gameType}`);
-        }
-
-        return {
-            drawId,
-            dateStr: drawDateText,
-            dateYmd: dateToYmd(drawDateText)
-        };
-    } catch (error) {
-        console.warn(`[vietlott] Thất bại khi cào Vietlott.vn cho ${gameType}: ${error.message}. Thử cào XSKT làm phương án dự phòng...`);
         try {
             return await fetchLatestDrawInfoFromXskt(gameType);
         } catch (xsktError) {
-            console.error(`[xskt] Thất bại hoàn toàn khi cào XSKT cho ${gameType}:`, xsktError.message);
-            throw error;
+            console.warn(`[xskt-direct] Thất bại khi lấy thông tin mới nhất từ XSKT: ${xsktError.message}. Thử chuyển sang Vietlott.vn làm fallback...`);
+            try {
+                return await fetchLatestDrawInfoFromVietlott(gameType);
+            } catch (vietlottError) {
+                console.error(`[scraper] Thất bại hoàn toàn khi lấy thông tin mới nhất:`, vietlottError.message);
+                throw xsktError;
+            }
+        }
+    } else {
+        console.log(`[vietlott-direct] Lấy thông tin mới nhất trực tiếp từ Vietlott.vn...`);
+        try {
+            return await fetchLatestDrawInfoFromVietlott(gameType);
+        } catch (vietlottError) {
+            console.warn(`[vietlott-direct] Thất bại khi lấy thông tin mới nhất từ Vietlott.vn: ${vietlottError.message}. Thử chuyển sang XSKT làm fallback...`);
+            try {
+                return await fetchLatestDrawInfoFromXskt(gameType);
+            } catch (xsktError) {
+                console.error(`[scraper] Thất bại hoàn toàn khi lấy thông tin mới nhất:`, xsktError.message);
+                throw vietlottError;
+            }
         }
     }
 }
@@ -191,6 +229,102 @@ async function fetchLatestDrawInfo(gameType, forceXskt = false) {
  * @param {number} drawId - Draw ID
  * @param {boolean} useCache - Whether to check local cache
  */
+async function fetchDrawDetailFromVietlott(gameType, drawId) {
+    const paddedId = padDrawId(drawId);
+    const url = `https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/${gameType}?id=${paddedId}&nocatche=1`;
+    
+    // Giãn cách động giữa các yêu cầu: nếu có cấu hình Proxy thì dùng 500ms, ngược lại dùng 1500ms
+    const hasProxy = !!(process.env.SCRAPER_API_KEY || process.env.SCRAPEDO_API_KEY || process.env.GAS_PROXY_URL);
+    const delayMs = hasProxy ? 500 : 1500;
+    await sleep(delayMs);
+
+    const response = await fetchWithRetry(url);
+    const $ = cheerio.load(response.data);
+
+    // 1. Extract draw ID and date
+    let drawIdParsed = null;
+    let dateStr = '';
+    $('h5').each((i, el) => {
+        const text = $(el).text().trim();
+        const match = text.match(/Kỳ quay thưởng\s+#(\d+)\s+ngày\s+(\d{2}\/\d{2}\/\d{4})/i);
+        if (match) {
+            drawIdParsed = parseInt(match[1], 10);
+            dateStr = match[2];
+        }
+    });
+
+    if (!drawIdParsed) {
+        // Try fallback
+        const h4Text = $('h4').text().trim();
+        const bText = $('h5 b').first().text().trim();
+        if (bText.startsWith('#')) {
+            drawIdParsed = parseInt(bText.substring(1), 10);
+        }
+    }
+
+    // 2. Extract winning numbers
+    const numbers = [];
+    if (gameType === '645') {
+        $('.bong_tron').each((i, el) => {
+            const num = $(el).text().trim();
+            if (num) numbers.push(num);
+        });
+    } else if (gameType === '655' || gameType === '535') {
+        $('.bong_tron.small').each((i, el) => {
+            const num = $(el).text().trim();
+            if (num) numbers.push(num);
+        });
+    }
+
+    if (numbers.length === 0) {
+        // Try generic class
+        $('.bong_tron').each((i, el) => {
+            const num = $(el).text().trim();
+            if (num) numbers.push(num);
+        });
+    }
+
+    // 3. Extract prize table
+    const prizes = [];
+    $('table tr').each((i, tr) => {
+        if (i === 0) return; // Skip header row
+        const cells = [];
+        $(tr).find('td').each((j, td) => {
+            cells.push($(td).text().replace(/\s+/g, ' ').trim());
+        });
+        if (cells.length >= 4) {
+            prizes.push({
+                name: cells[0],
+                matching: cells[1],
+                count: parseInt(cells[2].replace(/\D/g, ''), 10) || 0,
+                valueStr: cells[3],
+                value: parseInt(cells[3].replace(/\D/g, ''), 10) || 0
+            });
+        }
+    });
+
+    // Validation check - số lượng tối thiểu phụ thuộc vào loại game
+    const minNumbers = gameType === '535' ? 5 : 6;
+    if (!drawIdParsed || numbers.length < minNumbers) {
+        throw new Error(`Parsed incomplete data for draw #${drawId} of game ${gameType} (got ${numbers.length} numbers, need ${minNumbers})`);
+    }
+
+    const result = {
+        drawId: drawIdParsed,
+        drawIdStr: paddedId,
+        dateStr,
+        dateYmd: dateToYmd(dateStr),
+        numbers,
+        prizes,
+        scrapedAt: new Date().toISOString()
+    };
+
+    // Save to cache
+    await db.saveDraw(gameType, result);
+
+    return result;
+}
+
 async function fetchDrawDetail(gameType, drawId, useCache = true, forceXskt = false) {
     if (useCache) {
         const cached = await db.getDraw(gameType, drawId);
@@ -199,107 +333,29 @@ async function fetchDrawDetail(gameType, drawId, useCache = true, forceXskt = fa
 
     if (forceXskt) {
         console.log(`[xskt-direct] Cào chi tiết kỳ quay #${drawId} trực tiếp từ XSKT...`);
-        return await fetchDrawDetailFromXskt(gameType, drawId);
-    }
-
-    const paddedId = padDrawId(drawId);
-    const url = `https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/${gameType}?id=${paddedId}&nocatche=1`;
-    
-    const delayMs = process.env.SCRAPER_API_KEY ? 800 : 100;
-    await sleep(delayMs);
-
-    try {
-        const response = await fetchWithRetry(url);
-        const $ = cheerio.load(response.data);
-
-        // 1. Extract draw ID and date
-        let drawIdParsed = null;
-        let dateStr = '';
-        $('h5').each((i, el) => {
-            const text = $(el).text().trim();
-            const match = text.match(/Kỳ quay thưởng\s+#(\d+)\s+ngày\s+(\d{2}\/\d{2}\/\d{4})/i);
-            if (match) {
-                drawIdParsed = parseInt(match[1], 10);
-                dateStr = match[2];
-            }
-        });
-
-        if (!drawIdParsed) {
-            // Try fallback
-            const h4Text = $('h4').text().trim();
-            const bText = $('h5 b').first().text().trim();
-            if (bText.startsWith('#')) {
-                drawIdParsed = parseInt(bText.substring(1), 10);
-            }
-        }
-
-        // 2. Extract winning numbers
-        const numbers = [];
-        if (gameType === '645') {
-            $('.bong_tron').each((i, el) => {
-                const num = $(el).text().trim();
-                if (num) numbers.push(num);
-            });
-        } else if (gameType === '655' || gameType === '535') {
-            $('.bong_tron.small').each((i, el) => {
-                const num = $(el).text().trim();
-                if (num) numbers.push(num);
-            });
-        }
-
-        if (numbers.length === 0) {
-            // Try generic class
-            $('.bong_tron').each((i, el) => {
-                const num = $(el).text().trim();
-                if (num) numbers.push(num);
-            });
-        }
-
-        // 3. Extract prize table
-        const prizes = [];
-        $('table tr').each((i, tr) => {
-            if (i === 0) return; // Skip header row
-            const cells = [];
-            $(tr).find('td').each((j, td) => {
-                cells.push($(td).text().replace(/\s+/g, ' ').trim());
-            });
-            if (cells.length >= 4) {
-                prizes.push({
-                    name: cells[0],
-                    matching: cells[1],
-                    count: parseInt(cells[2].replace(/\D/g, ''), 10) || 0,
-                    valueStr: cells[3],
-                    value: parseInt(cells[3].replace(/\D/g, ''), 10) || 0
-                });
-            }
-        });
-
-        // Validation check
-        if (!drawIdParsed || numbers.length < 6) {
-            throw new Error(`Parsed incomplete data for draw #${drawId} of game ${gameType}`);
-        }
-
-        const result = {
-            drawId: drawIdParsed,
-            drawIdStr: paddedId,
-            dateStr,
-            dateYmd: dateToYmd(dateStr),
-            numbers,
-            prizes,
-            scrapedAt: new Date().toISOString()
-        };
-
-        // Save to cache
-        await db.saveDraw(gameType, result);
-
-        return result;
-    } catch (error) {
-        console.warn(`[vietlott] Thất bại khi cào chi tiết Vietlott.vn cho ${gameType} #${drawId}: ${error.message}. Chuyển sang cào XSKT...`);
         try {
             return await fetchDrawDetailFromXskt(gameType, drawId);
         } catch (xsktError) {
-            console.error(`[xskt] Thất bại hoàn toàn khi cào chi tiết XSKT cho ${gameType} #${drawId}:`, xsktError.message);
-            throw error;
+            console.warn(`[xskt-direct] Thất bại khi cào XSKT cho ${gameType} #${drawId}: ${xsktError.message}. Thử chuyển sang Vietlott.vn làm fallback...`);
+            try {
+                return await fetchDrawDetailFromVietlott(gameType, drawId);
+            } catch (vietlottError) {
+                console.error(`[scraper] Thất bại hoàn toàn khi cào chi tiết cho ${gameType} #${drawId}:`, vietlottError.message);
+                throw xsktError;
+            }
+        }
+    } else {
+        console.log(`[vietlott-direct] Cào chi tiết kỳ quay #${drawId} trực tiếp từ Vietlott.vn...`);
+        try {
+            return await fetchDrawDetailFromVietlott(gameType, drawId);
+        } catch (vietlottError) {
+            console.warn(`[vietlott-direct] Thất bại khi cào Vietlott.vn cho ${gameType} #${drawId}: ${vietlottError.message}. Thử chuyển sang XSKT làm fallback...`);
+            try {
+                return await fetchDrawDetailFromXskt(gameType, drawId);
+            } catch (xsktError) {
+                console.error(`[scraper] Thất bại hoàn toàn khi cào chi tiết cho ${gameType} #${drawId}:`, xsktError.message);
+                throw vietlottError;
+            }
         }
     }
 }
@@ -542,28 +598,60 @@ async function fetchLatestDrawInfoFromXskt(gameType) {
 }
 
 async function fetchDrawDetailFromXskt(gameType, drawId) {
-    const urls = [
-        getXsktUrl(gameType),
-        `${getXsktUrl(gameType)}/30-ngay`,
-        `${getXsktUrl(gameType)}/100-ngay`
-    ];
-
-    for (const baseUrl of urls) {
-        console.log(`[xskt] Đang tìm kiếm Kỳ #${drawId} trên trang: ${baseUrl}`);
-        try {
-            const response = await fetchWithRetry(baseUrl);
-            const results = parseXsktPage(response.data, gameType, drawId);
-            if (results.length > 0) {
-                console.log(`[xskt] ✓ Đã tìm thấy dữ liệu Kỳ #${drawId} trên XSKT!`);
-                const result = results[0];
-                await db.saveDraw(gameType, result);
-                return result;
-            }
-        } catch (e) {
-            console.error(`[xskt] Lỗi khi cào từ ${baseUrl}:`, e.message);
+    let cacheForGame = xsktParsedCache[gameType];
+    
+    // Tìm ID kỳ quay lớn nhất hiện có trong cache (nếu đã có cache)
+    let maxCachedId = 0;
+    if (cacheForGame) {
+        const cachedIds = Object.keys(cacheForGame).map(Number);
+        if (cachedIds.length > 0) {
+            maxCachedId = Math.max(...cachedIds);
         }
     }
-    throw new Error(`Không thể cào dữ liệu cho Kỳ #${drawId} từ XSKT.`);
+
+    // Nếu chưa có cache cho game này, HOẶC kỳ quay cần cào mới hơn kỳ quay lớn nhất trong cache:
+    // Tiến hành tải các trang của XSKT để cập nhật cache.
+    if (!cacheForGame || drawId > maxCachedId) {
+        console.log(`[xskt-cache] Nạp mới/cập nhật bộ nhớ tạm XSKT cho game ${gameType} (đang cần Kỳ #${drawId})...`);
+        const urls = [
+            getXsktUrl(gameType),
+            `${getXsktUrl(gameType)}/30-ngay`,
+            `${getXsktUrl(gameType)}/100-ngay`
+        ];
+
+        const newCache = {};
+        for (const baseUrl of urls) {
+            try {
+                console.log(`[xskt] Đang cào dữ liệu từ trang: ${baseUrl}`);
+                const response = await fetchWithRetry(baseUrl);
+                // Lấy tất cả kết quả trên trang (không lọc theo targetDrawId để lưu đầy đủ vào cache)
+                const results = parseXsktPage(response.data, gameType);
+                results.forEach(res => {
+                    newCache[res.drawId] = res;
+                });
+                await sleep(500); // Tránh cào dồn dập các trang XSKT
+            } catch (e) {
+                console.error(`[xskt] Lỗi khi cào từ ${baseUrl}:`, e.message);
+            }
+        }
+        
+        // Gộp kết quả mới vào cache cũ (nếu có) hoặc ghi đè
+        xsktParsedCache[gameType] = {
+            ...(xsktParsedCache[gameType] || {}),
+            ...newCache
+        };
+        cacheForGame = xsktParsedCache[gameType];
+    }
+
+    // Tìm kiếm kỳ quay mong muốn trong bộ nhớ tạm
+    const result = cacheForGame[drawId];
+    if (result) {
+        console.log(`[xskt] ✓ Đã tìm thấy dữ liệu Kỳ #${drawId} trên XSKT (từ bộ nhớ tạm)!`);
+        await db.saveDraw(gameType, result);
+        return result;
+    }
+
+    throw new Error(`Không thể cào dữ liệu cho Kỳ #${drawId} từ XSKT (Kỳ quay này không nằm trong 100 ngày gần nhất trên XSKT).`);
 }
 
 module.exports = {

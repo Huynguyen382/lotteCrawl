@@ -162,16 +162,20 @@ async function scrapeStream(req, res) {
             return res.end();
         }
 
-        // Nếu crawlMode === 'xskt' (Bật chế độ cào trực tuyến từ XSKT)
-        sendEvent('log', { message: 'Đang kết nối đến cơ sở dữ liệu...' });
+        // Nếu crawlMode === 'xskt' (Bật chế độ cào trực tuyến)
+        // Xác định nguồn ưu tiên: Local (IP VN) → Vietlott trước; Production → XSKT trước
+        const isProduction = process.env.NODE_ENV === 'production';
+        const forceXskt = isProduction; // Production dùng XSKT trước vì Vietlott chặn IP nước ngoài
+        const sourceName = forceXskt ? 'XSKT.com.vn' : 'Vietlott.vn';
+        sendEvent('log', { message: `Đang kết nối đến nguồn dữ liệu: ${sourceName}...` });
         
         let latestId = null;
         let latestInfo = null;
-        sendEvent('log', { message: 'Đang lấy thông tin kỳ quay mới nhất từ hệ thống trực tuyến (XSKT.com.vn)...' });
+        sendEvent('log', { message: `Đang lấy thông tin kỳ quay mới nhất từ ${sourceName}...` });
         try {
-            latestInfo = await fetchLatestDrawInfo(game, true);
+            latestInfo = await fetchLatestDrawInfo(game, forceXskt);
             latestId = latestInfo.drawId;
-            sendEvent('log', { message: `Kỳ quay mới nhất trực tuyến: #${latestId} (${latestInfo.dateStr})` });
+            sendEvent('log', { message: `Kỳ quay mới nhất: #${latestId} (${latestInfo.dateStr})` });
         } catch (e) {
             sendEvent('log', { message: `Không thể lấy kỳ quay mới nhất trực tuyến (${e.message}). Sử dụng dữ liệu mới nhất từ DB làm thay thế.` });
             latestInfo = await db.getLatestDraw(game);
@@ -190,12 +194,12 @@ async function scrapeStream(req, res) {
         sendEvent('log', { message: `Đang tìm kỳ quay bắt đầu cho ngày ${startDate}...` });
         const startId = await findDrawIdForDate(game, startDate, 'start', latestId, (msg) => {
             sendEvent('log', { message: msg });
-        }, true); // forceXskt = true
+        }, forceXskt);
 
         sendEvent('log', { message: `Đang tìm kỳ quay kết thúc cho ngày ${endDate}...` });
         const endId = await findDrawIdForDate(game, endDate, 'end', latestId, (msg) => {
             sendEvent('log', { message: msg });
-        }, true); // forceXskt = true
+        }, forceXskt);
 
         sendEvent('log', { message: `Phạm vi kỳ quay xác định: #${startId} đến #${endId}` });
 
@@ -209,7 +213,8 @@ async function scrapeStream(req, res) {
         sendEvent('start', { startId, endId, totalDraws });
 
         const results = [];
-        const CONCURRENCY = 4;
+        const hasProxy = !!(process.env.SCRAPER_API_KEY || process.env.SCRAPEDO_API_KEY || process.env.GAS_PROXY_URL);
+        const CONCURRENCY = hasProxy ? 4 : 1;
         const queue = [];
         
         const hasPrev = startId > 1;
@@ -222,19 +227,21 @@ async function scrapeStream(req, res) {
         let completed = 0;
         const errors = [];
         
-        const fetchOne = async (id) => {
+        const fetchOne = async (id, isRetry = false) => {
             try {
-                const drawDetail = await fetchDrawDetail(game, id, true, true); // forceXskt = true
+                const drawDetail = await fetchDrawDetail(game, id, true, forceXskt);
                 results.push(drawDetail);
-                console.log(`✓ Scraped draw #${id} successfully`);
+                console.log(`✓ Scraped draw #${id} successfully${isRetry ? ' (retry)' : ''}`);
                 return { success: true, id };
             } catch (err) {
                 console.error(`✗ Failed to scrape draw #${id}:`, err.message);
-                errors.push({ id, error: err.message });
-                sendEvent('log', { message: `Cảnh báo: Không thể tải kỳ quay #${id}: ${err.message}` });
+                if (!isRetry) {
+                    errors.push({ id, error: err.message });
+                    sendEvent('log', { message: `Cảnh báo: Không thể tải kỳ quay #${id}: ${err.message}` });
+                }
                 return { success: false, id };
             } finally {
-                if (id >= startId) {
+                if (id >= startId && !isRetry) {
                     completed++;
                     const progressPercent = Math.min(100, Math.round((completed / totalDraws) * 100));
                     sendEvent('progress', { 
@@ -257,6 +264,29 @@ async function scrapeStream(req, res) {
         };
         const workers = Array(Math.min(CONCURRENCY, queue.length)).fill(null).map(worker);
         await Promise.all(workers);
+
+        // Retry lại các kỳ quay bị lỗi (tối đa 2 vòng retry)
+        for (let retryRound = 1; retryRound <= 2 && errors.length > 0; retryRound++) {
+            const failedIds = errors.map(e => e.id);
+            const retryIds = failedIds.filter(id => !results.some(r => r.drawId === id));
+            if (retryIds.length === 0) break;
+            
+            sendEvent('log', { message: `🔄 Đang thử lại ${retryIds.length} kỳ quay bị lỗi (lần ${retryRound}/2)...` });
+            errors.length = 0; // Reset error list cho vòng retry này
+            
+            for (const id of retryIds) {
+                await fetchOne(id, true);
+                if (!results.some(r => r.drawId === id)) {
+                    errors.push({ id, error: 'Retry failed' });
+                }
+            }
+            
+            if (errors.length > 0) {
+                sendEvent('log', { message: `⚠️ Vẫn còn ${errors.length} kỳ quay lỗi sau retry lần ${retryRound}` });
+            } else {
+                sendEvent('log', { message: `✅ Đã khôi phục tất cả kỳ quay bị lỗi!` });
+            }
+        }
 
         results.sort((a, b) => a.drawId - b.drawId);
 

@@ -79,6 +79,30 @@ async function initDb() {
             `;
             await pool.query(createTableQuery);
             console.log('[db] Database schema verified (draw_results table ready).');
+
+            // Populate in-memory cache from PostgreSQL
+            console.log('[db] Loading all draw results from PostgreSQL into in-memory cache...');
+            const allRes = await pool.query(
+                `SELECT game, draw_id as "drawId", draw_id_str as "drawIdStr", date_str as "dateStr", date_ymd as "dateYmd", numbers, prizes, scraped_at as "scrapedAt"
+                 FROM draw_results`
+            );
+            
+            localCache = { "645": {}, "655": {}, "535": {} };
+            allRes.rows.forEach(row => {
+                const gameType = row.game;
+                const id = parseInt(row.drawId, 10);
+                if (!localCache[gameType]) localCache[gameType] = {};
+                localCache[gameType][id] = {
+                    drawId: id,
+                    drawIdStr: row.drawIdStr,
+                    dateStr: row.dateStr,
+                    dateYmd: row.dateYmd,
+                    numbers: typeof row.numbers === 'string' ? JSON.parse(row.numbers) : row.numbers,
+                    prizes: typeof row.prizes === 'string' ? JSON.parse(row.prizes) : row.prizes,
+                    scrapedAt: row.scrapedAt
+                };
+            });
+            console.log(`[db] Successfully cached ${allRes.rows.length} rows in memory.`);
         } catch (error) {
             console.error('[db] Error connecting to PostgreSQL, falling back to local cache:', error.message);
             pool = null;
@@ -252,28 +276,25 @@ async function query(text, params) {
 
 async function getDraw(game, drawId) {
     const id = parseInt(drawId, 10);
-    if (usePostgres && pool) {
-        try {
-            const res = await pool.query(
-                'SELECT draw_id as "drawId", draw_id_str as "drawIdStr", date_str as "dateStr", date_ymd as "dateYmd", numbers, prizes, scraped_at as "scrapedAt" FROM draw_results WHERE game = $1 AND draw_id = $2',
-                [game, id]
-            );
-            if (res.rows.length > 0) {
-                return res.rows[0];
-            }
-            return null;
-        } catch (error) {
-            console.error(`[db] Error getting draw ${game} #${id}:`, error.message);
-            return null;
-        }
-    } else {
-        return localCache[game]?.[id] || null;
-    }
+    return localCache[game]?.[id] || null;
 }
 
 async function saveDraw(game, draw) {
     if (!draw || !draw.drawId) return false;
     const id = parseInt(draw.drawId, 10);
+    
+    // Luôn ghi vào in-memory cache trước
+    if (!localCache[game]) localCache[game] = {};
+    localCache[game][id] = {
+        drawId: id,
+        drawIdStr: draw.drawIdStr || String(id).padStart(5, '0'),
+        dateStr: draw.dateStr,
+        dateYmd: draw.dateYmd,
+        numbers: draw.numbers,
+        prizes: draw.prizes,
+        scrapedAt: draw.scrapedAt || new Date().toISOString()
+    };
+
     if (usePostgres && pool) {
         try {
             await pool.query(
@@ -311,16 +332,6 @@ async function saveDraw(game, draw) {
             return false;
         }
     } else {
-        if (!localCache[game]) localCache[game] = {};
-        localCache[game][id] = {
-            drawId: id,
-            drawIdStr: draw.drawIdStr || String(id).padStart(5, '0'),
-            dateStr: draw.dateStr,
-            dateYmd: draw.dateYmd,
-            numbers: draw.numbers,
-            prizes: draw.prizes,
-            scrapedAt: draw.scrapedAt || new Date().toISOString()
-        };
         saveLocalCache();
         
         // Đồng bộ sang online DB bất đồng bộ (non-blocking)
@@ -335,6 +346,12 @@ async function saveDraw(game, draw) {
 
 async function deleteDraw(game, drawId) {
     const id = parseInt(drawId, 10);
+    
+    // Luôn xóa khỏi in-memory cache trước
+    if (localCache[game] && localCache[game][id]) {
+        delete localCache[game][id];
+    }
+
     if (usePostgres && pool) {
         try {
             await pool.query(
@@ -355,98 +372,49 @@ async function deleteDraw(game, drawId) {
             return false;
         }
     } else {
-        if (localCache[game] && localCache[game][id]) {
-            delete localCache[game][id];
-            saveLocalCache();
-            if (onlinePool) {
-                onlinePool.query(
-                    'DELETE FROM draw_results WHERE game = $1 AND draw_id = $2',
-                    [game, id]
-                ).catch(err => {
-                    console.error(`[db-sync] Background delete error for draw ${game} #${id}:`, err.message);
-                });
-            }
-            return true;
+        saveLocalCache();
+        if (onlinePool) {
+            onlinePool.query(
+                'DELETE FROM draw_results WHERE game = $1 AND draw_id = $2',
+                [game, id]
+            ).catch(err => {
+                console.error(`[db-sync] Background delete error for draw ${game} #${id}:`, err.message);
+            });
         }
-        return false;
+        return true;
     }
 }
 
 async function getLatestDraw(game) {
-    if (usePostgres && pool) {
-        try {
-            const res = await pool.query(
-                'SELECT draw_id as "drawId", draw_id_str as "drawIdStr", date_str as "dateStr", date_ymd as "dateYmd", numbers, prizes, scraped_at as "scrapedAt" FROM draw_results WHERE game = $1 ORDER BY draw_id DESC LIMIT 1',
-                [game]
-            );
-            if (res.rows.length > 0) {
-                return res.rows[0];
-            }
-            return null;
-        } catch (error) {
-            console.error(`[db] Error getting latest draw for game ${game}:`, error.message);
-            return null;
-        }
-    } else {
-        const gameCache = localCache[game] || {};
-        const ids = Object.keys(gameCache).map(id => parseInt(id, 10));
-        if (ids.length === 0) return null;
-        const maxId = Math.max(...ids);
-        return gameCache[maxId];
-    }
+    const gameCache = localCache[game] || {};
+    const ids = Object.keys(gameCache).map(id => parseInt(id, 10));
+    if (ids.length === 0) return null;
+    const maxId = Math.max(...ids);
+    return gameCache[maxId];
 }
 
 async function getDrawsInRange(game, startId, endId) {
     const sId = parseInt(startId, 10);
     const eId = parseInt(endId, 10);
-    if (usePostgres && pool) {
-        try {
-            const res = await pool.query(
-                `SELECT draw_id as "drawId", draw_id_str as "drawIdStr", date_str as "dateStr", date_ymd as "dateYmd", numbers, prizes, scraped_at as "scrapedAt" 
-                  FROM draw_results 
-                  WHERE game = $1 AND draw_id >= $2 AND draw_id <= $3 
-                  ORDER BY draw_id ASC`,
-                [game, sId, eId]
-            );
-            return res.rows;
-        } catch (error) {
-            console.error(`[db] Error getting draws in range for game ${game} [${sId}, ${eId}]:`, error.message);
-            return [];
+    const gameCache = localCache[game] || {};
+    const results = [];
+    for (let id = sId; id <= eId; id++) {
+        if (gameCache[id]) {
+            results.push(gameCache[id]);
         }
-    } else {
-        const gameCache = localCache[game] || {};
-        const results = [];
-        for (let id = sId; id <= eId; id++) {
-            if (gameCache[id]) {
-                results.push(gameCache[id]);
-            }
-        }
-        return results;
     }
+    return results;
 }
 
 async function getAllDrawsMetadata(game) {
-    if (usePostgres && pool) {
-        try {
-            const res = await pool.query(
-                'SELECT draw_id as "drawId", date_ymd as "dateYmd" FROM draw_results WHERE game = $1 ORDER BY draw_id ASC',
-                [game]
-            );
-            return res.rows;
-        } catch (error) {
-            console.error(`[db] Error getting all draws metadata for game ${game}:`, error.message);
-            return [];
-        }
-    } else {
-        const gameCache = localCache[game] || {};
-        return Object.keys(gameCache).map(id => {
-            const idInt = parseInt(id, 10);
-            return {
-                drawId: idInt,
-                dateYmd: gameCache[id].dateYmd
-            };
-        }).sort((a, b) => a.drawId - b.drawId);
-    }
+    const gameCache = localCache[game] || {};
+    return Object.keys(gameCache).map(id => {
+        const idInt = parseInt(id, 10);
+        return {
+            drawId: idInt,
+            dateYmd: gameCache[id].dateYmd
+        };
+    }).sort((a, b) => a.drawId - b.drawId);
 }
 
 module.exports = {
