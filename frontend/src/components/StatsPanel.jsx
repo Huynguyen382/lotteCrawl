@@ -173,48 +173,88 @@ function StatsPanel({ game, visibleResults }) {
 
   const filteredPairs = getFilteredPairs();
 
-  // --- 3. BẠC NHỚ (KỲ TRƯỚC -> KỲ SAU) ---
+  // --- 3. BẠC NHỚ (KỲ TRƯỚC -> KỲ SAU) với LIFT METRIC ---
   const getTransitions = () => {
     if (visibleResults.length < 2) return [];
     const mainLength = game === '535' ? 5 : 6;
     const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
     
-    // Đảm bảo sắp xếp tăng dần theo drawId để bảo toàn thời gian
+    // Sắp xếp tăng dần theo drawId (chronological order)
     const chronological = [...visibleResults].sort((a, b) => a.drawId - b.drawId);
     
-    const transitions = {};
-    for (let i = 1; i <= maxNum; i++) {
-      transitions[i] = {};
+    // 1. Tính tần suất xuất hiện tổng thể của mỗi số
+    const globalFreq = {};
+    for (let i = 1; i <= maxNum; i++) globalFreq[i] = 0;
+    chronological.forEach(draw => {
+      if (!draw.numbers || draw.numbers.length < mainLength) return;
+      draw.numbers.slice(0, mainLength).map(Number).forEach(n => {
+        globalFreq[n] = (globalFreq[n] || 0) + 1;
+      });
+    });
+
+    // 2. Tính tần suất xuất hiện của mỗi số ở vị trí "kỳ trước" (trừ kỳ cuối)
+    const prevAppearCount = {};
+    for (let i = 1; i <= maxNum; i++) prevAppearCount[i] = 0;
+    for (let t = 0; t < chronological.length - 1; t++) {
+      const prev = chronological[t];
+      if (!prev.numbers || prev.numbers.length < mainLength) continue;
+      prev.numbers.slice(0, mainLength).map(Number).forEach(n => {
+        prevAppearCount[n] = (prevAppearCount[n] || 0) + 1;
+      });
     }
 
+    // 3. Đếm transition matrix
+    const transitions = {};
+    for (let i = 1; i <= maxNum; i++) transitions[i] = {};
+
+    let validPairCount = 0;
     for (let t = 0; t < chronological.length - 1; t++) {
       const prev = chronological[t];
       const next = chronological[t + 1];
       if (!prev.numbers || !next.numbers || prev.numbers.length < mainLength || next.numbers.length < mainLength) continue;
 
+      validPairCount++;
       const prevNums = prev.numbers.slice(0, mainLength).map(Number);
       const nextNums = next.numbers.slice(0, mainLength).map(Number);
 
       prevNums.forEach(x => {
         nextNums.forEach(y => {
-          if (transitions[x]) {
-            transitions[x][y] = (transitions[x][y] || 0) + 1;
-          }
+          transitions[x][y] = (transitions[x][y] || 0) + 1;
         });
       });
     }
 
+    // 4. Tính Lift, P(Y|X), P(Y), z-score cho mỗi transition
+    const totalDraws = chronological.length;
+    const pExpect = mainLength / maxNum; // P(Y trong 1 kỳ ngẫu nhiên)
+
     const result = [];
     for (let i = 1; i <= maxNum; i++) {
       const nextMap = transitions[i] || {};
-      const nextArray = Object.entries(nextMap).map(([num, count]) => ({
-        num: String(num).padStart(2, '0'),
-        count
-      })).sort((a, b) => b.count - a.count);
+      const xAppear = prevAppearCount[i] || 1; // số kỳ mà số i xuất hiện ở vị trí "trước"
+      const expectedPerY = xAppear * pExpect; // kỳ vọng ngẫu nhiên cho transition[i][Y]
+
+      const nextArray = Object.entries(nextMap).map(([num, count]) => {
+        const numInt = parseInt(num, 10);
+        const pYGlobal = globalFreq[numInt] / totalDraws; // P(Y tổng thể)
+        const pYGivenX = count / (xAppear * mainLength);   // P(Y | X=i)
+        const lift = pYGlobal > 0 ? pYGivenX / pYGlobal : 1;
+        const zScore = expectedPerY > 0 ? (count - expectedPerY) / Math.max(Math.sqrt(expectedPerY), 1) : 0;
+
+        return {
+          num: String(numInt).padStart(2, '0'),
+          count,
+          lift: Math.round(lift * 1000) / 1000,
+          pConditional: Math.round(pYGivenX * 10000) / 100, // %
+          pGlobal: Math.round(pYGlobal * 10000) / 100,       // %
+          zScore: Math.round(zScore * 100) / 100
+        };
+      }).sort((a, b) => b.lift - a.lift); // Sắp xếp theo Lift giảm dần
 
       result.push({
         number: String(i).padStart(2, '0'),
-        topNext: nextArray.slice(0, 8) // Top 8 số hay xuất hiện nhất
+        appearances: xAppear,
+        topNext: nextArray.slice(0, 10) // Top 10 số có Lift cao nhất
       });
     }
 
@@ -644,13 +684,20 @@ function StatsPanel({ game, visibleResults }) {
           </table>
         </div>
       ) : (
-        /* REPORT: TRANSITIONS / BẠC NHỚ */
+        /* REPORT: TRANSITIONS / BẠC NHỚ (Lift Metric) */
         <div className="table-wrapper">
           <table className="preview-table">
             <thead>
               <tr>
                 <th style={{ textAlign: 'center', width: '100px' }}>Số kỳ trước</th>
-                <th>Số hay xuất hiện nhất ở kỳ sau (Bóng số & Số lần về)</th>
+                <th>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Top số hay xuất hiện ở kỳ sau (sắp xếp theo Lift)</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-dimmed)', fontWeight: '400' }}>
+                      Lift {'>'} 1.0 = cao hơn ngẫu nhiên &nbsp;|&nbsp; Lift ≈ 1.0 = ngẫu nhiên &nbsp;|&nbsp; Lift {'<'} 1.0 = thấp hơn
+                    </span>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -660,36 +707,78 @@ function StatsPanel({ game, visibleResults }) {
                     <span className="ball" style={{ margin: '0 auto', background: 'radial-gradient(circle at 30% 30%, #457b9d, #1d3557)' }}>
                       {item.number}
                     </span>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-dimmed)', marginTop: '4px' }}>
+                      {item.appearances} kỳ
+                    </div>
                   </td>
                   <td>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', padding: '4px 0' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '4px 0' }}>
                       {item.topNext.map((next, idx) => {
-                        const maxCount = Math.max(...item.topNext.map(t => t.count), 1);
-                        const relativeWeight = next.count / maxCount;
-                        const opacity = 0.45 + relativeWeight * 0.55;
+                        // Color coding based on Lift
+                        let liftColor, liftBg, liftBorder, liftIcon;
+                        if (next.lift >= 1.20) {
+                          liftColor = '#2ecc71'; // Green - significantly above random
+                          liftBg = 'rgba(46, 204, 113, 0.08)';
+                          liftBorder = 'rgba(46, 204, 113, 0.25)';
+                          liftIcon = '🔥';
+                        } else if (next.lift >= 1.10) {
+                          liftColor = '#87ceab'; // Light green - slightly above
+                          liftBg = 'rgba(135, 206, 171, 0.06)';
+                          liftBorder = 'rgba(135, 206, 171, 0.18)';
+                          liftIcon = '↑';
+                        } else if (next.lift <= 0.80) {
+                          liftColor = '#e74c3c'; // Red - significantly below
+                          liftBg = 'rgba(231, 76, 60, 0.06)';
+                          liftBorder = 'rgba(231, 76, 60, 0.18)';
+                          liftIcon = '↓';
+                        } else if (next.lift <= 0.90) {
+                          liftColor = '#e0a899'; // Light red - slightly below
+                          liftBg = 'rgba(224, 168, 153, 0.05)';
+                          liftBorder = 'rgba(224, 168, 153, 0.15)';
+                          liftIcon = '↓';
+                        } else {
+                          liftColor = 'var(--text-muted)'; // Neutral
+                          liftBg = 'rgba(255,255,255,0.03)';
+                          liftBorder = 'rgba(255,255,255,0.06)';
+                          liftIcon = '≈';
+                        }
+                        
+                        const tooltipText = `Số ${next.num}: ${next.count} lần\nP(${next.num}|${item.number}) = ${next.pConditional}%\nP(${next.num}) tổng thể = ${next.pGlobal}%\nLift = ${next.lift}x\nZ-Score = ${next.zScore}`;
                         
                         return (
-                          <div key={idx} style={{ 
+                          <div key={idx} title={tooltipText} style={{ 
                             display: 'flex', 
                             alignItems: 'center', 
-                            background: `rgba(255,255,255,${0.03 + relativeWeight * 0.05})`, 
-                            padding: '4px 8px', 
+                            background: liftBg, 
+                            padding: '4px 10px 4px 6px', 
                             borderRadius: '20px',
-                            border: `1px solid rgba(255,255,255,${0.04 + relativeWeight * 0.08})`,
-                            opacity: opacity
-                          }}>
+                            border: `1px solid ${liftBorder}`,
+                            cursor: 'help',
+                            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                            gap: '6px'
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = `0 0 10px ${liftBorder}`; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = 'none'; }}
+                          >
                             <span className="ball small" style={{ 
                               width: '24px', 
                               height: '24px', 
-                              fontSize: '0.75rem', 
-                              marginRight: '6px',
-                              background: relativeWeight === 1 ? 'var(--primary)' : undefined
+                              fontSize: '0.75rem',
+                              flexShrink: 0,
+                              background: next.lift >= 1.20 ? 'radial-gradient(circle at 30% 30%, #2ecc71, #1a8c4e)' :
+                                         next.lift >= 1.10 ? 'radial-gradient(circle at 30% 30%, #5dade2, #2980b9)' :
+                                         undefined
                             }}>
                               {next.num}
                             </span>
-                            <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: relativeWeight === 1 ? 'var(--primary)' : 'var(--text-main)' }}>
-                              {next.count} lần
-                            </span>
+                            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: '1.15' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: liftColor }}>
+                                {liftIcon} {next.lift.toFixed(2)}x
+                              </span>
+                              <span style={{ fontSize: '0.6rem', color: 'var(--text-dimmed)' }}>
+                                {next.count} lần
+                              </span>
+                            </div>
                           </div>
                         );
                       })}
