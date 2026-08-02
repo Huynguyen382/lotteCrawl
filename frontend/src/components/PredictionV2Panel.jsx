@@ -69,6 +69,47 @@ function PredictionV2Panel({
   const totalPages = Math.max(1, Math.ceil(filteredTickets.length / pageSize));
   const paginatedTickets = filteredTickets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
+  // Map of number -> current absent draws
+  const absencesMap = useMemo(() => {
+    if (visibleResults.length === 0) return {};
+    
+    const map = {};
+    const reversedResults = [...visibleResults].sort((a, b) => b.drawId - a.drawId);
+    
+    for (let i = 1; i <= maxNum; i++) {
+      const numStr = String(i).padStart(2, '0');
+      const idx = reversedResults.findIndex(draw => {
+        const checkLength = game === '535' ? 5 : 6;
+        const mainNums = draw.numbers ? draw.numbers.slice(0, checkLength).map(n => parseInt(n, 10)) : [];
+        return mainNums.includes(i);
+      });
+      map[numStr] = idx !== -1 ? idx : visibleResults.length;
+    }
+    
+    // For Special numbers (if game is 655 or 535)
+    if (game === '655') {
+      for (let i = 1; i <= 55; i++) {
+        const numStr = String(i).padStart(2, '0');
+        const idx = reversedResults.findIndex(draw => {
+          if (!draw.numbers || draw.numbers.length <= 6) return false;
+          return parseInt(draw.numbers[6], 10) === i;
+        });
+        map[`sp_${numStr}`] = idx !== -1 ? idx : visibleResults.length;
+      }
+    } else if (game === '535') {
+      for (let i = 1; i <= 12; i++) {
+        const numStr = String(i).padStart(2, '0');
+        const idx = reversedResults.findIndex(draw => {
+          if (!draw.numbers || draw.numbers.length <= 5) return false;
+          return parseInt(draw.numbers[5], 10) === i;
+        });
+        map[`sp_${numStr}`] = idx !== -1 ? idx : visibleResults.length;
+      }
+    }
+    
+    return map;
+  }, [visibleResults, game, maxNum]);
+
   // States for custom ticket scoring
   const [numbersInput, setNumbersInput] = useState('');
   const [specialInput, setSpecialInput] = useState('');
@@ -908,7 +949,12 @@ function PredictionV2Panel({
       {generatedTickets.length > 0 && (
         <div className="v2-results-area">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-            <h4 className="v2-results-title" style={{ margin: 0 }}>Top {ticketCount.toLocaleString()} Vé Tối Ưu Nhất (Điểm Sinh Tồn Trực Tiếp)</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <h4 className="v2-results-title" style={{ margin: 0 }}>Top {ticketCount.toLocaleString()} Vé Tối Ưu Nhất (Điểm Sinh Tồn Trực Tiếp)</h4>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-dimmed, #8d99ae)' }}>
+                *(Chỉ số nhỏ dưới mỗi bóng hiển thị số kỳ vắng mặt hiện tại)*
+              </span>
+            </div>
             
             {/* Search Filter Box */}
             <div className="input-group" style={{ position: 'relative', width: '260px' }}>
@@ -1012,17 +1058,45 @@ function PredictionV2Panel({
                     </div>
                   </div>
 
-                  <div className="v2-ticket-balls">
-                    {ticket.numbers.map((num, idx) => (
-                      <div key={idx} className="v2-ball main">
-                        {num}
-                      </div>
-                    ))}
-                    {ticket.specialNumber && (
-                      <div className="v2-ball special">
-                        {ticket.specialNumber}
-                      </div>
-                    )}
+                  <div className="v2-ticket-balls" style={{ alignItems: 'flex-start' }}>
+                    {ticket.numbers.map((num, idx) => {
+                      const absCount = absencesMap[num] !== undefined ? absencesMap[num] : 0;
+                      let absColor = 'var(--text-muted)';
+                      if (absCount >= 20) {
+                        absColor = '#e63946'; // Red for long absence (gan)
+                      } else if (absCount >= 10) {
+                        absColor = '#f4a261'; // Orange
+                      }
+                      
+                      return (
+                        <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                          <div className="v2-ball main">
+                            {num}
+                          </div>
+                          <span style={{ fontSize: '0.7rem', color: absColor, fontWeight: '700' }}>
+                            {absCount}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {ticket.specialNumber && (() => {
+                      const spKey = `sp_${ticket.specialNumber}`;
+                      const absCount = absencesMap[spKey] !== undefined ? absencesMap[spKey] : 0;
+                      let absColor = 'var(--text-muted)';
+                      if (absCount >= 20) absColor = '#e63946';
+                      else if (absCount >= 10) absColor = '#f4a261';
+                      
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                          <div className="v2-ball special">
+                            {ticket.specialNumber}
+                          </div>
+                          <span style={{ fontSize: '0.7rem', color: absColor, fontWeight: '700' }}>
+                            {absCount}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {uniqueReasons.length > 0 && (
