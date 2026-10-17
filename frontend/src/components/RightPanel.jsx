@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DrawTable from './DrawTable';
 import MobileCards from './MobileCards';
@@ -6,6 +6,7 @@ import StatsPanel from './StatsPanel';
 import TrendAnalysisPanel from './TrendAnalysisPanel';
 import PredictionPanel from './PredictionPanel';
 import PredictionV2Panel from './PredictionV2Panel';
+import ResultsMatrixCollapse from './ResultsMatrixCollapse';
 
 function RightPanel({
   activeTab,
@@ -30,6 +31,28 @@ function RightPanel({
   predictionTicketCountV2,
   setPredictionTicketCountV2
 }) {
+  const [expandedRowIds, setExpandedRowIds] = useState(new Set());
+
+  const handleToggleRowExpand = (drawId) => {
+    setExpandedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(drawId)) {
+        next.delete(drawId);
+      } else {
+        next.add(drawId);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleAllRows = () => {
+    if (expandedRowIds.size === filteredResults.length) {
+      setExpandedRowIds(new Set());
+    } else {
+      setExpandedRowIds(new Set(filteredResults.map((d) => d.drawId)));
+    }
+  };
+
   return (
     <div className="glass-panel preview-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '400px' }}>
       <div className="preview-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -180,12 +203,22 @@ function RightPanel({
                     )}
                   </div>
 
+                  {/* Collapsible Number Matrix (1-45 MEGA / 1-55 POWER - 8 numbers per row) */}
+                  <ResultsMatrixCollapse 
+                    game={game} 
+                    results={filteredResults}
+                    onToggleAll={handleToggleAllRows}
+                    allRowsExpanded={filteredResults.length > 0 && expandedRowIds.size === filteredResults.length}
+                  />
+
                   {/* Desktop View */}
                   <DrawTable 
                     game={game} 
                     filteredResults={filteredResults} 
                     calculateDeltas={calculateDeltas} 
                     statsConfig={statsConfigV2}
+                    expandedRowIds={expandedRowIds}
+                    onToggleRowExpand={handleToggleRowExpand}
                   />
 
                   {/* Mobile View */}
@@ -194,6 +227,8 @@ function RightPanel({
                     filteredResults={filteredResults} 
                     calculateDeltas={calculateDeltas} 
                     statsConfig={statsConfigV2}
+                    expandedRowIds={expandedRowIds}
+                    onToggleRowExpand={handleToggleRowExpand}
                   />
                 </>
               ) : activeTab === 'stats' ? (

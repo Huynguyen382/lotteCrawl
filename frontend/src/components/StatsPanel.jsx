@@ -1,12 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import ResultsMatrixCollapse from './ResultsMatrixCollapse';
+import NumberMatrixGrid from './NumberMatrixGrid';
 
 function StatsPanel({ game, visibleResults }) {
   const [statsSearchQuery, setStatsSearchQuery] = useState('');
-  const [statsViewMode, setStatsViewMode] = useState('table'); // 'table' or 'chart'
+  const [statsViewMode, setStatsViewMode] = useState('table'); // 'table', 'chart', or 'matrix'
   const [statsType, setStatsType] = useState('main'); // 'main' or 'special'
   const [sortBy, setSortBy] = useState('number');
   const [calculationMode, setCalculationMode] = useState('common'); // 'common' or 'separate'
   const [currentReport, setCurrentReport] = useState('absences'); // 'absences', 'pairs', or 'transitions'
+
+  // Date range and coverage filter state
+  const [datePreset, setDatePreset] = useState('all'); // 'all', '10', '20', '30days', '60days', '90days', 'custom'
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [matrixViewType, setMatrixViewType] = useState('coverage'); // 'coverage' (lấp số) or 'draw' (theo kỳ)
+  const [showMissingNumbers, setShowMissingNumbers] = useState(true);
+
+  // Helper to parse draw date to ISO format YYYY-MM-DD
+  const parseDateToISO = (draw) => {
+    if (!draw) return '';
+    if (draw.dateYmd) return draw.dateYmd;
+    if (!draw.dateStr) return '';
+    const parts = draw.dateStr.split('/');
+    if (parts.length === 3) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    return draw.dateStr;
+  };
+
+  // Find min/max available dates across all visible results
+  const availableDateRange = useMemo(() => {
+    if (!visibleResults || visibleResults.length === 0) return { min: '', max: '' };
+    const isoDates = visibleResults.map(parseDateToISO).filter(Boolean).sort();
+    return {
+      min: isoDates[0] || '',
+      max: isoDates[isoDates.length - 1] || ''
+    };
+  }, [visibleResults]);
+
+  // Synchronize start/end date inputs when availableDateRange updates
+  useEffect(() => {
+    if (datePreset === 'all' && availableDateRange.min && availableDateRange.max) {
+      setStartDate(availableDateRange.min);
+      setEndDate(availableDateRange.max);
+    }
+  }, [availableDateRange, datePreset]);
 
   // Reset stats configurations when game type changes
   useEffect(() => {
@@ -14,19 +53,158 @@ function StatsPanel({ game, visibleResults }) {
     setStatsSearchQuery('');
     setCalculationMode('common');
     setCurrentReport('absences');
+    setDatePreset('all');
   }, [game]);
 
-  // Compute absent draws for main numbers (1-45 Mega, 1-55 Power, 1-35 Lotto)
+  // Preset selector handler
+  const handlePresetSelect = (preset) => {
+    setDatePreset(preset);
+    if (!visibleResults || visibleResults.length === 0) return;
+    
+    const sorted = [...visibleResults].sort((a, b) => b.drawId - a.drawId);
+    if (preset === 'all') {
+      setStartDate(availableDateRange.min || '');
+      setEndDate(availableDateRange.max || '');
+    } else if (preset === '10') {
+      const subset = sorted.slice(0, 10);
+      if (subset.length > 0) {
+        const subIso = subset.map(parseDateToISO).filter(Boolean).sort();
+        setStartDate(subIso[0]);
+        setEndDate(subIso[subIso.length - 1]);
+      }
+    } else if (preset === '20') {
+      const subset = sorted.slice(0, 20);
+      if (subset.length > 0) {
+        const subIso = subset.map(parseDateToISO).filter(Boolean).sort();
+        setStartDate(subIso[0]);
+        setEndDate(subIso[subIso.length - 1]);
+      }
+    } else if (preset === '30days' || preset === '60days' || preset === '90days') {
+      const days = preset === '30days' ? 30 : preset === '60days' ? 60 : 90;
+      const baseDate = availableDateRange.max ? new Date(availableDateRange.max) : new Date();
+      const cutoff = new Date(baseDate);
+      cutoff.setDate(cutoff.getDate() - days);
+      const cutoffIso = cutoff.toISOString().split('T')[0];
+      setStartDate(cutoffIso);
+      setEndDate(availableDateRange.max || baseDate.toISOString().split('T')[0]);
+    }
+  };
+
+  // Filter draws by selected date range / preset (sorted newest first)
+  const rangeFilteredResults = useMemo(() => {
+    if (!visibleResults || visibleResults.length === 0) return [];
+    
+    const sorted = [...visibleResults].sort((a, b) => b.drawId - a.drawId); // Newest first
+    
+    if (datePreset === '10') {
+      return sorted.slice(0, 10);
+    }
+    if (datePreset === '20') {
+      return sorted.slice(0, 20);
+    }
+    if (datePreset === '30days' || datePreset === '60days' || datePreset === '90days') {
+      if (!startDate) return sorted;
+      return sorted.filter(draw => {
+        const dIso = parseDateToISO(draw);
+        return (!startDate || dIso >= startDate) && (!endDate || dIso <= endDate);
+      });
+    }
+    if (datePreset === 'custom') {
+      return sorted.filter(draw => {
+        const dIso = parseDateToISO(draw);
+        if (startDate && dIso < startDate) return false;
+        if (endDate && dIso > endDate) return false;
+        return true;
+      });
+    }
+    return sorted; // 'all'
+  }, [visibleResults, datePreset, startDate, endDate]);
+
+  // Compute number fill rate (Tỷ lệ lấp số) across rangeFilteredResults
+  const fillStats = useMemo(() => {
+    const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
+    const totalNumbers = (statsType === 'special' && calculationMode === 'separate')
+      ? (game === '655' ? 55 : 12)
+      : maxNum;
+    const mainLength = game === '535' ? 5 : 6;
+    const specialIdx = game === '655' ? 6 : 5;
+
+    const freqMap = {};
+    for (let i = 1; i <= totalNumbers; i++) {
+      freqMap[i] = 0;
+    }
+
+    rangeFilteredResults.forEach(draw => {
+      if (!draw.numbers) return;
+      if (statsType === 'special' && calculationMode === 'separate') {
+        if (draw.numbers.length > specialIdx) {
+          const spNum = parseInt(draw.numbers[specialIdx], 10);
+          if (spNum >= 1 && spNum <= totalNumbers) {
+            freqMap[spNum] = (freqMap[spNum] || 0) + 1;
+          }
+        }
+      } else {
+        const checkNums = (game !== '645' && calculationMode === 'common')
+          ? draw.numbers
+          : draw.numbers.slice(0, mainLength);
+        checkNums.forEach(n => {
+          const nInt = parseInt(n, 10);
+          if (nInt >= 1 && nInt <= totalNumbers) {
+            freqMap[nInt] = (freqMap[nInt] || 0) + 1;
+          }
+        });
+      }
+    });
+
+    const filledNumbers = [];
+    const missingNumbers = [];
+
+    for (let i = 1; i <= totalNumbers; i++) {
+      if (freqMap[i] > 0) {
+        filledNumbers.push(String(i).padStart(2, '0'));
+      } else {
+        missingNumbers.push(String(i).padStart(2, '0'));
+      }
+    }
+
+    const filledCount = filledNumbers.length;
+    const missingCount = missingNumbers.length;
+    const fillRate = totalNumbers > 0 ? ((filledCount / totalNumbers) * 100).toFixed(1) : '0';
+
+    let rangeLabel = '';
+    if (rangeFilteredResults.length > 0) {
+      const newest = rangeFilteredResults[0];
+      const oldest = rangeFilteredResults[rangeFilteredResults.length - 1];
+      rangeLabel = newest.dateStr && oldest.dateStr 
+        ? `${oldest.dateStr} ➔ ${newest.dateStr}`
+        : `${rangeFilteredResults.length} kỳ quay`;
+    }
+
+    return {
+      freqMap,
+      totalNumbers,
+      filledNumbers,
+      missingNumbers,
+      filledCount,
+      missingCount,
+      fillRate: parseFloat(fillRate),
+      drawCount: rangeFilteredResults.length,
+      rangeLabel
+    };
+  }, [rangeFilteredResults, game, statsType, calculationMode]);
+
+  // Compute absent draws for main numbers (1-45 Mega, 1-55 Power, 1-35 Lotto) based on date range
   const getAbsenceStatistics = () => {
-    if (visibleResults.length === 0) return [];
+    if (rangeFilteredResults.length === 0) return [];
     
     const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
     const mainLength = game === '535' ? 5 : 6;
-    const reversedResults = [...visibleResults].sort((a, b) => b.drawId - a.drawId);
+    const reversedResults = rangeFilteredResults; // already newest first
     const stats = [];
     
     for (let i = 1; i <= maxNum; i++) {
       const numStr = String(i).padStart(2, '0');
+      const frequency = fillStats.freqMap[i] || 0;
       
       const firstSeenIndex = reversedResults.findIndex(draw => {
         if (!draw.numbers) return false;
@@ -41,14 +219,18 @@ function StatsPanel({ game, visibleResults }) {
           number: numStr,
           absentDraws: firstSeenIndex,
           lastSeenDrawId: reversedResults[firstSeenIndex].drawIdStr,
-          lastSeenDate: reversedResults[firstSeenIndex].dateStr
+          lastSeenDate: reversedResults[firstSeenIndex].dateStr,
+          frequency,
+          isFilled: frequency > 0
         });
       } else {
         stats.push({
           number: numStr,
-          absentDraws: visibleResults.length,
+          absentDraws: rangeFilteredResults.length,
           lastSeenDrawId: 'N/A',
-          lastSeenDate: 'Chưa về'
+          lastSeenDate: 'Chưa về',
+          frequency,
+          isFilled: false
         });
       }
     }
@@ -56,17 +238,18 @@ function StatsPanel({ game, visibleResults }) {
     return stats;
   };
 
-  // Compute absent draws for Special/Bonus numbers (Power 6/55: 1-55, Lotto 5/35: 1-12)
+  // Compute absent draws for Special/Bonus numbers based on date range
   const getSpecialAbsenceStatistics = () => {
-    if (visibleResults.length === 0 || game === '645') return [];
+    if (rangeFilteredResults.length === 0 || game === '645') return [];
     
     const maxNum = game === '655' ? 55 : 12;
     const specialIdx = game === '655' ? 6 : 5;
-    const reversedResults = [...visibleResults].sort((a, b) => b.drawId - a.drawId);
+    const reversedResults = rangeFilteredResults; // already newest first
     const stats = [];
     
     for (let i = 1; i <= maxNum; i++) {
       const numStr = String(i).padStart(2, '0');
+      const frequency = fillStats.freqMap[i] || 0;
       
       const firstSeenIndex = reversedResults.findIndex(draw => {
         if (!draw.numbers) return false;
@@ -83,14 +266,18 @@ function StatsPanel({ game, visibleResults }) {
           number: numStr,
           absentDraws: firstSeenIndex,
           lastSeenDrawId: reversedResults[firstSeenIndex].drawIdStr,
-          lastSeenDate: reversedResults[firstSeenIndex].dateStr
+          lastSeenDate: reversedResults[firstSeenIndex].dateStr,
+          frequency,
+          isFilled: frequency > 0
         });
       } else {
         stats.push({
           number: numStr,
-          absentDraws: visibleResults.length,
+          absentDraws: rangeFilteredResults.length,
           lastSeenDrawId: 'N/A',
-          lastSeenDate: 'Chưa về'
+          lastSeenDate: 'Chưa về',
+          frequency,
+          isFilled: false
         });
       }
     }
@@ -107,6 +294,10 @@ function StatsPanel({ game, visibleResults }) {
       return stats.sort((a, b) => b.absentDraws - a.absentDraws);
     } else if (sortBy === 'absent-asc') {
       return stats.sort((a, b) => a.absentDraws - b.absentDraws);
+    } else if (sortBy === 'frequency-desc') {
+      return stats.sort((a, b) => b.frequency - a.frequency);
+    } else if (sortBy === 'frequency-asc') {
+      return stats.sort((a, b) => a.frequency - b.frequency);
     }
     return stats;
   };
@@ -276,8 +467,34 @@ function StatsPanel({ game, visibleResults }) {
 
   const filteredTransitions = getFilteredTransitions();
 
+  const absenceMap = useMemo(() => {
+    const stats = statsType === 'special' ? getSpecialAbsenceStatistics() : getAbsenceStatistics();
+    const map = {};
+    stats.forEach(item => {
+      map[parseInt(item.number, 10)] = item.absentDraws;
+    });
+    return map;
+  }, [rangeFilteredResults, game, statsType, calculationMode, fillStats]);
+
+  const latestDraw = useMemo(() => {
+    if (!rangeFilteredResults || rangeFilteredResults.length === 0) return null;
+    return rangeFilteredResults[0];
+  }, [rangeFilteredResults]);
+
   return (
     <div className="stats-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      
+      {/* Collapsible Number Matrix with Absence & Coverage Info */}
+      {visibleResults.length > 0 && (
+        <ResultsMatrixCollapse
+          game={game}
+          results={rangeFilteredResults.length > 0 ? rangeFilteredResults : visibleResults}
+          absenceMap={absenceMap}
+          fillStats={fillStats}
+          title={`Ma trận số 8 cột (Chu kỳ vắng & Tỷ lệ lấp số)`}
+          subtitle={`Phạm vi ${rangeFilteredResults.length} kỳ quay • Tỷ lệ lấp số: ${fillStats.fillRate}% (${fillStats.filledCount}/${fillStats.totalNumbers} số)`}
+        />
+      )}
       
       {/* Thống kê Sub-Tabs */}
       <div className="stats-sub-tabs" style={{ 
@@ -314,9 +531,273 @@ function StatsPanel({ game, visibleResults }) {
         ))}
       </div>
 
+      {/* BẢNG ĐIỀU KHIỂN KHOẢNG NGÀY & TỶ LỆ LẤP SỐ (CHỈ TRONG TAB CHU KỲ VẮNG) */}
+      {currentReport === 'absences' && (
+        <div 
+          className="coverage-kpi-card glass-panel"
+          style={{
+            padding: '16px 18px',
+            borderRadius: '12px',
+            background: 'rgba(15, 23, 42, 0.65)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px'
+          }}
+        >
+          {/* Row 1: Header + Presets */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'rgba(46, 196, 182, 0.15)',
+                border: '1px solid rgba(46, 196, 182, 0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1rem',
+                color: '#2ec4b6',
+                flexShrink: 0
+              }}>
+                📅
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '700', color: '#fff' }}>
+                  Phân tích theo khoảng ngày & Tỷ lệ lấp số
+                </h3>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Lọc kỳ quay theo thời gian để theo dõi tỷ lệ bao phủ và các số chưa từng xuất hiện
+                </span>
+              </div>
+            </div>
+
+            {/* Presets */}
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {[
+                { id: 'all', label: 'Tất cả' },
+                { id: '10', label: '10 kỳ gần nhất' },
+                { id: '20', label: '20 kỳ gần nhất' },
+                { id: '30days', label: '30 ngày' },
+                { id: '60days', label: '60 ngày' },
+                { id: '90days', label: '90 ngày' }
+              ].map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => handlePresetSelect(p.id)}
+                  style={{
+                    background: datePreset === p.id ? 'var(--primary)' : 'rgba(255, 255, 255, 0.05)',
+                    border: datePreset === p.id ? '1px solid var(--primary)' : '1px solid rgba(255, 255, 255, 0.1)',
+                    color: datePreset === p.id ? '#fff' : 'var(--text-muted)',
+                    borderRadius: '6px',
+                    padding: '5px 11px',
+                    fontSize: '0.75rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Row 2: Date Pickers & Range Info */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            flexWrap: 'wrap',
+            padding: '8px 12px',
+            background: 'rgba(0, 0, 0, 0.25)',
+            borderRadius: '8px',
+            border: '1px solid rgba(255, 255, 255, 0.04)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Từ ngày:</span>
+              <input
+                type="date"
+                className="input-field"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setDatePreset('custom');
+                }}
+                style={{ height: '30px', padding: '2px 8px', fontSize: '0.8rem', width: '135px' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Đến ngày:</span>
+              <input
+                type="date"
+                className="input-field"
+                value={endDate}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  setDatePreset('custom');
+                }}
+                style={{ height: '30px', padding: '2px 8px', fontSize: '0.8rem', width: '135px' }}
+              />
+            </div>
+
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              <span>Đang xét: <strong style={{ color: '#fff' }}>{rangeFilteredResults.length}</strong> / {visibleResults.length} kỳ</span>
+              {fillStats.rangeLabel && (
+                <span style={{ color: 'var(--accent)', fontWeight: '600' }}>({fillStats.rangeLabel})</span>
+              )}
+            </div>
+          </div>
+
+          {/* Row 3: 4 KPI Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: '12px'
+          }}>
+            {/* KPI 1: Tỷ lệ lấp số */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: '10px',
+              padding: '12px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+                <span>TỶ LỆ LẤP SỐ</span>
+                <span style={{ color: '#2ec4b6', fontWeight: '700' }}>{fillStats.filledCount}/{fillStats.totalNumbers} số</span>
+              </div>
+              <div style={{ fontSize: '1.45rem', fontWeight: '800', color: fillStats.fillRate >= 80 ? '#2ec4b6' : fillStats.fillRate >= 60 ? '#f4a261' : '#e63946' }}>
+                {fillStats.fillRate}%
+              </div>
+              <div style={{ width: '100%', height: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{
+                  width: `${Math.min(100, fillStats.fillRate)}%`,
+                  height: '100%',
+                  background: fillStats.fillRate >= 80 ? 'linear-gradient(90deg, #2ec4b6, #3a86ff)' : 'linear-gradient(90deg, #f4a261, #e63946)',
+                  borderRadius: '3px',
+                  transition: 'width 0.4s ease'
+                }} />
+              </div>
+            </div>
+
+            {/* KPI 2: Số đã lấp */}
+            <div style={{
+              background: 'rgba(46, 196, 182, 0.06)',
+              border: '1px solid rgba(46, 196, 182, 0.2)',
+              borderRadius: '10px',
+              padding: '12px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}>
+              <span style={{ fontSize: '0.75rem', color: '#2ec4b6', fontWeight: '600' }}>SỐ ĐÃ LẤP (ĐÃ VỀ)</span>
+              <div style={{ fontSize: '1.45rem', fontWeight: '800', color: '#fff' }}>
+                {fillStats.filledCount} <span style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--text-muted)' }}>số</span>
+              </div>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Xuất hiện ≥ 1 lần trong khoảng này</span>
+            </div>
+
+            {/* KPI 3: Số chưa lấp */}
+            <div style={{
+              background: 'rgba(230, 57, 70, 0.06)',
+              border: '1px solid rgba(230, 57, 70, 0.2)',
+              borderRadius: '10px',
+              padding: '12px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}>
+              <span style={{ fontSize: '0.75rem', color: '#ff6b6b', fontWeight: '600' }}>SỐ CHƯA LẤP (VẮNG MẶT)</span>
+              <div style={{ fontSize: '1.45rem', fontWeight: '800', color: '#ff6b6b' }}>
+                {fillStats.missingCount} <span style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--text-muted)' }}>số</span>
+              </div>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Chưa từng về lần nào</span>
+            </div>
+
+            {/* KPI 4: Số kỳ quay */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: '10px',
+              padding: '12px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>KỲ QUAY TRONG KHOẢNG</span>
+              <div style={{ fontSize: '1.45rem', fontWeight: '800', color: '#fff' }}>
+                {fillStats.drawCount} <span style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--text-muted)' }}>kỳ</span>
+              </div>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Mẫu dữ liệu tính toán</span>
+            </div>
+          </div>
+
+          {/* Row 4: Missing Numbers Ball Pills (Số chưa lấp) */}
+          {fillStats.missingNumbers.length > 0 && (
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.2)',
+              padding: '10px 14px',
+              borderRadius: '8px',
+              border: '1px solid rgba(230, 57, 70, 0.15)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.78rem', color: '#ff6b6b', fontWeight: '700' }}>
+                  ⚠️ Danh sách {fillStats.missingCount} số chưa lấp (vắng mặt toàn bộ khoảng ngày đã chọn):
+                </span>
+                <button
+                  onClick={() => setShowMissingNumbers(!showMissingNumbers)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontSize: '0.72rem',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  {showMissingNumbers ? 'Thu gọn' : 'Xem chi tiết'}
+                </button>
+              </div>
+
+              {showMissingNumbers && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                  {fillStats.missingNumbers.map(num => (
+                    <span
+                      key={num}
+                      className="ball"
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        fontSize: '0.75rem',
+                        fontWeight: '700',
+                        background: 'rgba(230, 57, 70, 0.18)',
+                        color: '#ff858d',
+                        border: '1px solid rgba(230, 57, 70, 0.4)',
+                        boxShadow: 'none'
+                      }}
+                      title={`Số ${num}: Chưa về lần nào trong ${fillStats.drawCount} kỳ quay`}
+                    >
+                      {num}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap', padding: '0 4px' }}>
         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-          {currentReport === 'absences' && `Chu kỳ vắng dựa trên ${visibleResults.length} kỳ quay (${game !== '645' ? `Chế độ ${calculationMode === 'common' ? 'Chung' : 'Riêng'}` : 'Số chính'}).`}
+          {currentReport === 'absences' && `Chu kỳ vắng và tỷ lệ lấp số dựa trên ${rangeFilteredResults.length} / ${visibleResults.length} kỳ quay (${game !== '645' ? `Chế độ ${calculationMode === 'common' ? 'Chung' : 'Riêng'}` : 'Số chính'}).`}
           {currentReport === 'pairs' && `Tần suất đi cặp trong 1 kỳ (Dựa trên ${visibleResults.length} kỳ quay).`}
           {currentReport === 'transitions' && `Xu hướng xuất hiện ở kỳ sau (Dựa trên ${visibleResults.length} kỳ quay).`}
         </span>
@@ -412,6 +893,23 @@ function StatsPanel({ game, visibleResults }) {
                 >
                   Biểu đồ
                 </button>
+                <button
+                  className={`toggle-btn ${statsViewMode === 'matrix' ? 'active' : ''}`}
+                  onClick={() => setStatsViewMode('matrix')}
+                  style={{
+                    background: statsViewMode === 'matrix' ? 'var(--primary)' : 'none',
+                    border: 'none',
+                    color: '#fff',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    fontWeight: '600',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Ma trận 8 số
+                </button>
               </div>
 
               {/* Special number toggle */}
@@ -506,6 +1004,8 @@ function StatsPanel({ game, visibleResults }) {
                   <option value="number">Số thứ tự (Tăng dần)</option>
                   <option value="absent-desc">Kỳ vắng mặt (Nhiều nhất)</option>
                   <option value="absent-asc">Kỳ vắng mặt (Ít nhất)</option>
+                  <option value="frequency-desc">Tần suất xuất hiện (Nhiều nhất)</option>
+                  <option value="frequency-asc">Tần suất xuất hiện (Ít nhất / Chưa lấp)</option>
                 </select>
               </div>
             </>
@@ -520,8 +1020,9 @@ function StatsPanel({ game, visibleResults }) {
             <table className="preview-table">
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'center', width: '80px' }}>Số</th>
-                  <th style={{ textAlign: 'center', width: '180px' }}>Số kỳ vắng mặt</th>
+                  <th style={{ textAlign: 'center', width: '70px' }}>Số</th>
+                  <th style={{ textAlign: 'center', width: '160px' }}>Tình trạng lấp số</th>
+                  <th style={{ textAlign: 'center', width: '160px' }}>Số kỳ vắng mặt</th>
                   <th>Kỳ về gần nhất</th>
                   <th>Ngày về gần nhất</th>
                 </tr>
@@ -546,6 +1047,37 @@ function StatsPanel({ game, visibleResults }) {
                       <td style={{ textAlign: 'center' }}>
                         <span className={`ball ${statsType === 'special' ? 'power-bonus' : ''}`} style={{ margin: '0 auto' }}>{item.number}</span>
                       </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {item.isFilled ? (
+                          <span style={{ 
+                            padding: '4px 10px', 
+                            borderRadius: '12px', 
+                            backgroundColor: 'rgba(46, 196, 182, 0.15)',
+                            color: '#2ec4b6',
+                            fontWeight: '700',
+                            fontSize: '0.8rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}>
+                            ✓ Đã lấp ({item.frequency} lần)
+                          </span>
+                        ) : (
+                          <span style={{ 
+                            padding: '4px 10px', 
+                            borderRadius: '12px', 
+                            backgroundColor: 'rgba(230, 57, 70, 0.15)',
+                            color: '#e63946',
+                            fontWeight: '700',
+                            fontSize: '0.8rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}>
+                            ✗ Chưa lấp (0)
+                          </span>
+                        )}
+                      </td>
                       <td style={{ textAlign: 'center', fontWeight: 'bold', color: alertColor }}>
                         <span style={{ 
                           padding: '4px 10px', 
@@ -567,7 +1099,7 @@ function StatsPanel({ game, visibleResults }) {
               </tbody>
             </table>
           </div>
-        ) : (
+        ) : statsViewMode === 'chart' ? (
           <div className="chart-view" style={{ 
             display: 'flex', 
             flexDirection: 'column', 
@@ -596,7 +1128,7 @@ function StatsPanel({ game, visibleResults }) {
               }
 
               return (
-                <div key={item.number} style={{ display: 'flex', alignItems: 'center', gap: '16px' }} title={`Số ${item.number} vắng mặt ${item.absentDraws} kỳ.`}>
+                <div key={item.number} style={{ display: 'flex', alignItems: 'center', gap: '16px' }} title={`Số ${item.number} vắng mặt ${item.absentDraws} kỳ, xuất hiện ${item.frequency} lần trong khoảng ngày.`}>
                   <span className={`ball ${statsType === 'special' ? 'power-bonus' : ''}`} style={{ 
                     width: '32px', 
                     height: '32px', 
@@ -609,7 +1141,12 @@ function StatsPanel({ game, visibleResults }) {
                   
                   <div style={{ flex: '1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      <span>Lần về gần nhất: <strong>{item.lastSeenDrawId !== 'N/A' ? `#${item.lastSeenDrawId}` : 'N/A'}</strong> ({item.lastSeenDate})</span>
+                      <span>
+                        Lần về gần nhất: <strong>{item.lastSeenDrawId !== 'N/A' ? `#${item.lastSeenDrawId}` : 'N/A'}</strong> ({item.lastSeenDate})
+                        <span style={{ marginLeft: '10px', color: item.isFilled ? '#2ec4b6' : '#ff6b6b', fontWeight: '600' }}>
+                          • {item.isFilled ? `Đã lấp (${item.frequency} lần)` : 'Chưa lấp (0 lần)'}
+                        </span>
+                      </span>
                       <span style={{ fontWeight: 'bold', color: barColor }}>{item.absentDraws} kỳ vắng</span>
                     </div>
                     <div style={{ 
@@ -634,6 +1171,161 @@ function StatsPanel({ game, visibleResults }) {
                 </div>
               );
             })}
+          </div>
+        ) : (
+          /* REPORT: MATRIX 8-COLUMNS VIEW WITH COVERAGE TOGGLE */
+          <div 
+            className="matrix-view glass-panel" 
+            style={{ 
+              padding: '24px 16px', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              gap: '16px',
+              background: 'rgba(10, 15, 29, 0.4)'
+            }}
+          >
+            <div style={{ textAlign: 'center', maxWidth: '580px' }}>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: '0 0 6px 0', color: '#fff' }}>
+                Ma trận 8 số/dòng • Tỷ lệ lấp số theo khoảng ngày (1 - {game === '645' ? 45 : (game === '655' ? 55 : 35)})
+              </h3>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
+                {matrixViewType === 'coverage'
+                  ? `Đã lấp ${fillStats.filledCount}/${fillStats.totalNumbers} số (${fillStats.fillRate}%) trong ${fillStats.drawCount} kỳ quay • Sáng các số đã về (kèm tần suất), mờ các số chưa từng về.`
+                  : (latestDraw 
+                      ? `Kỳ mới nhất #${latestDraw.drawIdStr} (${latestDraw.dateStr}) • Sáng các số có trong kết quả xổ số, số bên dưới là số kỳ vắng mặt.` 
+                      : 'Mỗi dòng 8 số, chỉ sáng số có trong kết quả xổ số.')
+                }
+              </p>
+            </div>
+
+            {/* Matrix View Sub-Mode Switcher */}
+            <div style={{
+              display: 'flex',
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '8px',
+              padding: '3px',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}>
+              <button
+                onClick={() => setMatrixViewType('coverage')}
+                style={{
+                  background: matrixViewType === 'coverage' ? 'var(--primary)' : 'none',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  transition: 'all 0.2s'
+                }}
+              >
+                🎯 Ma trận lấp số ({fillStats.fillRate}%)
+              </button>
+              <button
+                onClick={() => setMatrixViewType('draw')}
+                style={{
+                  background: matrixViewType === 'draw' ? 'var(--primary)' : 'none',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  transition: 'all 0.2s'
+                }}
+              >
+                🎲 Ma trận kỳ gần nhất (#{latestDraw ? latestDraw.drawIdStr : 'N/A'})
+              </button>
+            </div>
+
+            <div 
+              style={{
+                background: 'rgba(10, 15, 29, 0.65)',
+                padding: '20px 16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                boxShadow: 'inset 0 2px 10px rgba(0, 0, 0, 0.4)'
+              }}
+            >
+              {matrixViewType === 'coverage' ? (
+                <NumberMatrixGrid
+                  game={game}
+                  numbers={[]}
+                  compact={false}
+                  coverageMode={true}
+                  freqMap={fillStats.freqMap}
+                  showFrequency={true}
+                  absenceMap={absenceMap}
+                />
+              ) : (
+                <NumberMatrixGrid
+                  game={game}
+                  numbers={latestDraw ? latestDraw.numbers : []}
+                  compact={false}
+                  absenceMap={absenceMap}
+                  showAbsence={true}
+                />
+              )}
+            </div>
+
+            {/* Legend for Matrix View */}
+            <div 
+              style={{ 
+                display: 'flex', 
+                gap: '16px', 
+                flexWrap: 'wrap', 
+                justifyContent: 'center', 
+                alignItems: 'center',
+                fontSize: '0.8rem', 
+                color: 'var(--text-muted)',
+                background: 'rgba(255, 255, 255, 0.02)',
+                padding: '8px 16px',
+                borderRadius: '8px'
+              }}
+            >
+              {matrixViewType === 'coverage' ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 30% 30%, #e63946, #c1121f)', display: 'inline-block', boxShadow: '0 0 6px rgba(230,57,70,0.8)' }} />
+                    <span>Đã lấp (Có xuất hiện)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', display: 'inline-block' }} />
+                    <span>Chưa lấp (Vắng 100%)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#2ec4b6', fontWeight: 'bold' }}>X lần:</span>
+                    <span>Số lần về trong khoảng</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#e63946', fontWeight: 'bold' }}>0:</span>
+                    <span>Chưa về lần nào</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 30% 30%, #e63946, #c1121f)', display: 'inline-block', boxShadow: '0 0 6px rgba(230,57,70,0.8)' }} />
+                    <span>Số trúng kỳ này (Sáng)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#2ec4b6', fontWeight: 'bold' }}>0:</span>
+                    <span>Vừa về</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#f4a261', fontWeight: 'bold' }}>≥10k:</span>
+                    <span>Vắng lâu</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#e63946', fontWeight: 'bold' }}>≥20k:</span>
+                    <span>Vắng cực đại</span>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )
       ) : currentReport === 'pairs' ? (

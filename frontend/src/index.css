@@ -856,3 +856,40 @@ body {
   align-items: center;
 }
 
+/* Number Matrix Grid styles */
+.results-matrix-collapse {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.matrix-ball.unlit:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+.matrix-ball.main-lit {
+  animation: lit-glow 2s infinite ease-in-out;
+}
+
+@keyframes lit-glow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(230, 57, 70, 0.7), 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(230, 57, 70, 0.95), 0 2px 8px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.matrix-ball.bonus-lit {
+  animation: bonus-lit-glow 2s infinite ease-in-out;
+}
+
+@keyframes bonus-lit-glow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(255, 183, 3, 0.7), 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(255, 183, 3, 0.95), 0 2px 8px rgba(0, 0, 0, 0.5);
+  }
+}
+
