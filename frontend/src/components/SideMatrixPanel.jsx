@@ -12,7 +12,8 @@ function SideMatrixPanel({
   sortedDraws = [],
   onSelectDrawId,
   absenceMap = null,
-  statsConfig = null
+  statsConfig = null,
+  onClose = null
 }) {
   const [showAbsence, setShowAbsence] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -146,23 +147,60 @@ function SideMatrixPanel({
           </div>
         </div>
 
-        {/* Phím tắt badge */}
-        <div 
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            fontSize: '0.7rem',
-            color: 'var(--accent)',
-            background: 'rgba(168, 218, 220, 0.1)',
-            padding: '4px 8px',
-            borderRadius: '6px',
-            border: '1px solid rgba(168, 218, 220, 0.2)'
-          }}
-          title="Dùng phím mũi tên Lên/Xuống trên bàn phím để chuyển kỳ nhanh"
-        >
-          <kbd style={{ background: 'rgba(0,0,0,0.4)', padding: '2px 5px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>↑</kbd>
-          <kbd style={{ background: 'rgba(0,0,0,0.4)', padding: '2px 5px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>↓</kbd>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Phím tắt badge */}
+          <div 
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '0.7rem',
+              color: 'var(--accent)',
+              background: 'rgba(168, 218, 220, 0.1)',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              border: '1px solid rgba(168, 218, 220, 0.2)'
+            }}
+            title="Dùng phím mũi tên Lên/Xuống trên bàn phím để chuyển kỳ nhanh"
+          >
+            <kbd style={{ background: 'rgba(0,0,0,0.4)', padding: '2px 5px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>↑</kbd>
+            <kbd style={{ background: 'rgba(0,0,0,0.4)', padding: '2px 5px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>↓</kbd>
+          </div>
+
+          {onClose && (
+            <button
+              onClick={onClose}
+              style={{
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: 'var(--text-muted)',
+                borderRadius: '8px',
+                width: '30px',
+                height: '30px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                fontSize: '1.2rem',
+                lineHeight: 1,
+                transition: 'all 0.2s',
+                padding: 0
+              }}
+              title="Đóng bảng ma trận (Xem toàn màn hình bảng kết quả)"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(230, 57, 70, 0.2)';
+                e.currentTarget.style.color = '#fff';
+                e.currentTarget.style.borderColor = 'rgba(230, 57, 70, 0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                e.currentTarget.style.color = 'var(--text-muted)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+              }}
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 
@@ -361,7 +399,7 @@ function SideMatrixPanel({
         <NumberMatrixGrid
           game={game}
           numbers={currentDraw.numbers}
-          compact={false}
+          compact={true}
           absenceMap={absenceMap}
           showAbsence={showAbsence}
         />
@@ -470,3 +508,4 @@ function SideMatrixPanel({
 }
 
 export default SideMatrixPanel;
+

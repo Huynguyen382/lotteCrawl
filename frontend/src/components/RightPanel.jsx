@@ -33,6 +33,7 @@ function RightPanel({
 }) {
   const [expandedRowIds, setExpandedRowIds] = useState(new Set());
   const [selectedDrawId, setSelectedDrawId] = useState(null);
+  const [isMatrixOpen, setIsMatrixOpen] = useState(false);
 
   // Danh sách các kỳ quay đảo ngược để hiển thị mới nhất ở trên
   const sortedDraws = useMemo(() => {
@@ -230,67 +231,102 @@ function RightPanel({
           >
             {visibleResults.length > 0 ? (
               activeTab === 'preview' ? (
-                <div className="preview-split-layout">
-                  {/* Cột trái: Tìm kiếm + Bảng danh sách kỳ quay */}
+                <div className={`preview-split-layout ${isMatrixOpen ? 'matrix-active' : 'matrix-hidden'}`}>
+                  {/* Cột chính: Tìm kiếm + Bảng danh sách kỳ quay */}
                   <div className="preview-table-column">
-                    {/* Search Box */}
-                    <div className="search-container" style={{ marginBottom: '16px', padding: '0 4px' }}>
-                      <div className="input-group" style={{ position: 'relative', width: '100%' }}>
-                        <input
-                          type="text"
-                          placeholder="Tìm kiếm kỳ quay, ngày, số (ví dụ: 15) hoặc bộ số (ví dụ: 15 23 34)..."
-                          className="input-field"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          style={{ paddingLeft: '38px', width: '100%', minHeight: '44px' }}
-                        />
-                        <svg 
-                          width="18" 
-                          height="18" 
-                          viewBox="0 0 24 24" 
-                          fill="none" 
-                          stroke="currentColor" 
-                          strokeWidth="2.5" 
-                          strokeLinecap="round" 
-                          strokeLinejoin="round"
-                          style={{
-                            position: 'absolute',
-                            left: '12px',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            color: 'var(--text-muted)'
-                          }}
-                        >
-                          <circle cx="11" cy="11" r="8"></circle>
-                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                        </svg>
-                        {searchQuery && (
-                          <button 
-                            onClick={() => setSearchQuery('')}
+                    {/* Header Controls: Search Box + Nút Bật/Tắt Ma Trận Bên Phải */}
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
+                      <div className="search-container" style={{ flex: 1, margin: 0, padding: 0 }}>
+                        <div className="input-group" style={{ position: 'relative', width: '100%' }}>
+                          <input
+                            type="text"
+                            placeholder="Tìm kiếm kỳ quay, ngày, số (ví dụ: 15) hoặc bộ số (ví dụ: 15 23 34)..."
+                            className="input-field"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            style={{ paddingLeft: '38px', width: '100%', minHeight: '44px' }}
+                          />
+                          <svg 
+                            width="18" 
+                            height="18" 
+                            viewBox="0 0 24 24" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="2.5" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
                             style={{
                               position: 'absolute',
-                              right: '12px',
+                              left: '12px',
                               top: '50%',
                               transform: 'translateY(-50%)',
-                              background: 'none',
-                              border: 'none',
-                              color: 'var(--text-muted)',
-                              cursor: 'pointer',
-                              fontSize: '1.4rem',
-                              lineHeight: '1',
-                              padding: '4px'
+                              color: 'var(--text-muted)'
                             }}
                           >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                      {searchQuery && (
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '8px', paddingLeft: '4px' }}>
-                          Tìm thấy <strong>{filteredResults.length}</strong> / {visibleResults.length} kỳ quay khớp điều kiện.
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                          </svg>
+                          {searchQuery && (
+                            <button 
+                              onClick={() => setSearchQuery('')}
+                              style={{
+                                position: 'absolute',
+                                right: '12px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer',
+                                fontSize: '1.4rem',
+                                lineHeight: '1',
+                                padding: '4px'
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
                         </div>
-                      )}
+                      </div>
+
+                      {/* Nút Bật / Tắt Bảng Ma Trận Bên Phải */}
+                      <button
+                        onClick={() => setIsMatrixOpen(!isMatrixOpen)}
+                        style={{
+                          background: isMatrixOpen ? 'linear-gradient(135deg, var(--primary), #9e1c27)' : 'rgba(255, 255, 255, 0.05)',
+                          border: isMatrixOpen ? '1px solid rgba(230, 57, 70, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
+                          color: '#fff',
+                          borderRadius: '10px',
+                          padding: '0 16px',
+                          height: '44px',
+                          fontSize: '0.85rem',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          whiteSpace: 'nowrap',
+                          boxShadow: isMatrixOpen ? '0 4px 14px rgba(230, 57, 70, 0.35)' : 'none',
+                          transition: 'all 0.2s ease',
+                          flexShrink: 0
+                        }}
+                        title={isMatrixOpen ? "Đóng bảng ma trận để xem toàn màn hình" : "Mở bảng ma trận số 8 cột ở bên phải"}
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="7" height="7"></rect>
+                          <rect x="14" y="3" width="7" height="7"></rect>
+                          <rect x="14" y="14" width="7" height="7"></rect>
+                          <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                        <span>{isMatrixOpen ? 'Đóng ma trận' : 'Mở ma trận'}</span>
+                      </button>
                     </div>
+
+                    {searchQuery && (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px', paddingLeft: '4px' }}>
+                        Tìm thấy <strong>{filteredResults.length}</strong> / {visibleResults.length} kỳ quay khớp điều kiện.
+                      </div>
+                    )}
 
                     {/* Desktop View: Bảng kết quả (DrawTable) */}
                     <DrawTable 
@@ -299,7 +335,10 @@ function RightPanel({
                       calculateDeltas={calculateDeltas} 
                       statsConfig={statsConfigV2}
                       selectedDrawId={activeDraw?.drawId}
-                      onSelectDraw={setSelectedDrawId}
+                      onSelectDraw={(drawId) => {
+                        setSelectedDrawId(drawId);
+                        setIsMatrixOpen(true);
+                      }}
                       expandedRowIds={expandedRowIds}
                       onToggleRowExpand={handleToggleRowExpand}
                     />
@@ -311,23 +350,35 @@ function RightPanel({
                       calculateDeltas={calculateDeltas} 
                       statsConfig={statsConfigV2}
                       selectedDrawId={activeDraw?.drawId}
-                      onSelectDraw={setSelectedDrawId}
+                      onSelectDraw={(drawId) => {
+                        setSelectedDrawId(drawId);
+                        setIsMatrixOpen(true);
+                      }}
                       expandedRowIds={expandedRowIds}
                       onToggleRowExpand={handleToggleRowExpand}
                     />
                   </div>
 
-                  {/* Cột phải: Bảng Ma Trận Kỳ Quay Được Chọn */}
-                  <div className="preview-matrix-column">
-                    <SideMatrixPanel
-                      game={game}
-                      currentDraw={activeDraw}
-                      sortedDraws={sortedDraws}
-                      onSelectDrawId={setSelectedDrawId}
-                      absenceMap={absencesMap}
-                      statsConfig={statsConfigV2}
-                    />
-                  </div>
+                  {/* Cột phải: Bảng Ma Trận Kỳ Quay Được Chọn (Chỉ render khi isMatrixOpen là true) */}
+                  {isMatrixOpen && (
+                    <>
+                      <div 
+                        className="matrix-drawer-backdrop" 
+                        onClick={() => setIsMatrixOpen(false)}
+                      />
+                      <div className="preview-matrix-column matrix-drawer-mode">
+                        <SideMatrixPanel
+                          game={game}
+                          currentDraw={activeDraw}
+                          sortedDraws={sortedDraws}
+                          onSelectDrawId={setSelectedDrawId}
+                          absenceMap={absencesMap}
+                          statsConfig={statsConfigV2}
+                          onClose={() => setIsMatrixOpen(false)}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : activeTab === 'stats' ? (
                 <StatsPanel 
