@@ -92,16 +92,18 @@ function SideMatrixPanel({
 
   return (
     <div 
-      className="glass-panel side-matrix-panel"
+      className="glass-panel side-matrix-panel custom-scrollbar"
       style={{
         position: 'sticky',
         top: '16px',
+        maxHeight: 'calc(100vh - 32px)',
+        overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
-        gap: '16px',
-        padding: '20px',
+        gap: '14px',
+        padding: '16px',
         borderRadius: '16px',
-        background: 'linear-gradient(180deg, rgba(20, 27, 45, 0.85) 0%, rgba(10, 15, 29, 0.95) 100%)',
+        background: 'linear-gradient(180deg, rgba(20, 27, 45, 0.9) 0%, rgba(10, 15, 29, 0.98) 100%)',
         border: '1px solid rgba(255, 255, 255, 0.1)',
         boxShadow: '0 12px 36px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
         backdropFilter: 'blur(16px)',
@@ -507,5 +509,5 @@ function SideMatrixPanel({
   );
 }
 
-export default SideMatrixPanel;
+export default React.memo(SideMatrixPanel);
 

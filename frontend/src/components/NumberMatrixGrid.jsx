@@ -202,4 +202,4 @@ function NumberMatrixGrid({
   );
 }
 
-export default NumberMatrixGrid;
+export default React.memo(NumberMatrixGrid);

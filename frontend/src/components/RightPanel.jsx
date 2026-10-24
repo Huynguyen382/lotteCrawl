@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DrawTable from './DrawTable';
 import MobileCards from './MobileCards';
@@ -77,7 +77,14 @@ function RightPanel({
     return map;
   }, [visibleResults, game, maxNum]);
 
+  // Refs để lưu danh sách và kỳ đang chọn phục vụ keyboard navigation mà không cần re-bind event listener
+  const sortedDrawsRef = useRef(sortedDraws);
+  sortedDrawsRef.current = sortedDraws;
+  const activeDrawRef = useRef(activeDraw);
+  activeDrawRef.current = activeDraw;
+
   // Điều hướng bằng các phím mũi tên bàn phím (ArrowUp, ArrowDown, ArrowLeft, ArrowRight)
+  // Khóa hiển thị: Chặn tuyệt đối cuộn trang web mặc định, giữ khung nhìn cố định
   useEffect(() => {
     const handleKeyDown = (e) => {
       // Bỏ qua nếu người dùng đang nhập vào ô tìm kiếm hoặc form
@@ -86,40 +93,44 @@ function RightPanel({
         return;
       }
 
-      if (sortedDraws.length === 0 || !activeDraw) return;
+      if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        return;
+      }
 
-      const currentIndex = sortedDraws.findIndex(d => d.drawId === activeDraw.drawId);
+      // Khóa tuyệt đối hành vi cuộn trang web mặc định của trình duyệt
+      e.preventDefault();
+      e.stopPropagation();
+
+      const draws = sortedDrawsRef.current;
+      const currentActive = activeDrawRef.current;
+      if (!draws || draws.length === 0 || !currentActive) return;
+
+      const currentIndex = draws.findIndex(d => d.drawId === currentActive.drawId);
       if (currentIndex === -1) return;
 
       // Phím Mũi tên Xuống hoặc Phải -> Kỳ tiếp theo trong bảng (cũ hơn)
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-        e.preventDefault();
-        if (currentIndex < sortedDraws.length - 1) {
-          const nextDraw = sortedDraws[currentIndex + 1];
+        if (currentIndex < draws.length - 1) {
+          const nextDraw = draws[currentIndex + 1];
           setSelectedDrawId(nextDraw.drawId);
-          const el = document.getElementById(`draw-row-${nextDraw.drawId}`);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
         }
       } 
       // Phím Mũi tên Lên hoặc Trái -> Kỳ phía trước trong bảng (mới hơn)
       else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-        e.preventDefault();
         if (currentIndex > 0) {
-          const prevDraw = sortedDraws[currentIndex - 1];
+          const prevDraw = draws[currentIndex - 1];
           setSelectedDrawId(prevDraw.drawId);
-          const el = document.getElementById(`draw-row-${prevDraw.drawId}`);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
         }
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, { passive: false });
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [sortedDraws, activeDraw]);
+  }, []);
+
+  const handleSelectDraw = useCallback((drawId) => {
+    setSelectedDrawId(drawId);
+  }, []);
 
   const handleToggleRowExpand = (drawId) => {
     setExpandedRowIds((prev) => {
@@ -309,7 +320,7 @@ function RightPanel({
                           transition: 'all 0.2s ease',
                           flexShrink: 0
                         }}
-                        title={isMatrixOpen ? "Thu gọn bảng ma trận bên phải" : "Mở bảng ma trận số 8 cột bên phải"}
+                        title={isMatrixOpen ? "Đóng bảng ma trận để xem rộng hơn" : "Mở bảng ma trận số 8 cột bên phải"}
                       >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                           <rect x="3" y="3" width="7" height="7"></rect>
@@ -317,7 +328,7 @@ function RightPanel({
                           <rect x="14" y="14" width="7" height="7"></rect>
                           <rect x="3" y="14" width="7" height="7"></rect>
                         </svg>
-                        <span>{isMatrixOpen ? 'Thu gọn ma trận' : 'Hiện ma trận'}</span>
+                        <span>{isMatrixOpen ? 'Đóng ma trận' : 'Mở ma trận'}</span>
                       </button>
                     </div>
 
@@ -334,12 +345,7 @@ function RightPanel({
                       calculateDeltas={calculateDeltas} 
                       statsConfig={statsConfigV2}
                       selectedDrawId={activeDraw?.drawId}
-                      onSelectDraw={(drawId) => {
-                        setSelectedDrawId(drawId);
-                        setIsMatrixOpen(true);
-                      }}
-                      expandedRowIds={expandedRowIds}
-                      onToggleRowExpand={handleToggleRowExpand}
+                      onSelectDraw={handleSelectDraw}
                     />
 
                     {/* Mobile View: Thẻ kết quả (MobileCards) */}
@@ -349,12 +355,7 @@ function RightPanel({
                       calculateDeltas={calculateDeltas} 
                       statsConfig={statsConfigV2}
                       selectedDrawId={activeDraw?.drawId}
-                      onSelectDraw={(drawId) => {
-                        setSelectedDrawId(drawId);
-                        setIsMatrixOpen(true);
-                      }}
-                      expandedRowIds={expandedRowIds}
-                      onToggleRowExpand={handleToggleRowExpand}
+                      onSelectDraw={handleSelectDraw}
                     />
                   </div>
 

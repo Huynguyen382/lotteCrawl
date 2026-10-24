@@ -766,4 +766,4 @@ function MobileCards({
   );
 }
 
-export default MobileCards;
+export default React.memo(MobileCards);
