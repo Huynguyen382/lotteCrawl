@@ -33,7 +33,7 @@ function RightPanel({
 }) {
   const [expandedRowIds, setExpandedRowIds] = useState(new Set());
   const [selectedDrawId, setSelectedDrawId] = useState(null);
-  const [isMatrixOpen, setIsMatrixOpen] = useState(false);
+  const [isMatrixOpen, setIsMatrixOpen] = useState(true);
 
   // Danh sách các kỳ quay đảo ngược để hiển thị mới nhất ở trên
   const sortedDraws = useMemo(() => {
@@ -231,8 +231,8 @@ function RightPanel({
           >
             {visibleResults.length > 0 ? (
               activeTab === 'preview' ? (
-                <div className={`preview-split-layout ${isMatrixOpen ? 'matrix-active' : 'matrix-hidden'}`}>
-                  {/* Cột chính: Tìm kiếm + Bảng danh sách kỳ quay */}
+                <div className={`preview-split-layout ${isMatrixOpen ? 'matrix-open' : 'matrix-closed'}`}>
+                  {/* Cột trái: Tìm kiếm + Bảng danh sách kỳ quay */}
                   <div className="preview-table-column">
                     {/* Header Controls: Search Box + Nút Bật/Tắt Ma Trận Bên Phải */}
                     <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
@@ -293,9 +293,9 @@ function RightPanel({
                       <button
                         onClick={() => setIsMatrixOpen(!isMatrixOpen)}
                         style={{
-                          background: isMatrixOpen ? 'linear-gradient(135deg, var(--primary), #9e1c27)' : 'rgba(255, 255, 255, 0.05)',
-                          border: isMatrixOpen ? '1px solid rgba(230, 57, 70, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
-                          color: '#fff',
+                          background: isMatrixOpen ? 'rgba(230, 57, 70, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                          border: isMatrixOpen ? '1px solid rgba(230, 57, 70, 0.45)' : '1px solid rgba(255, 255, 255, 0.1)',
+                          color: isMatrixOpen ? 'var(--primary)' : 'var(--text-muted)',
                           borderRadius: '10px',
                           padding: '0 16px',
                           height: '44px',
@@ -306,11 +306,10 @@ function RightPanel({
                           alignItems: 'center',
                           gap: '8px',
                           whiteSpace: 'nowrap',
-                          boxShadow: isMatrixOpen ? '0 4px 14px rgba(230, 57, 70, 0.35)' : 'none',
                           transition: 'all 0.2s ease',
                           flexShrink: 0
                         }}
-                        title={isMatrixOpen ? "Đóng bảng ma trận để xem toàn màn hình" : "Mở bảng ma trận số 8 cột ở bên phải"}
+                        title={isMatrixOpen ? "Thu gọn bảng ma trận bên phải" : "Mở bảng ma trận số 8 cột bên phải"}
                       >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                           <rect x="3" y="3" width="7" height="7"></rect>
@@ -318,7 +317,7 @@ function RightPanel({
                           <rect x="14" y="14" width="7" height="7"></rect>
                           <rect x="3" y="14" width="7" height="7"></rect>
                         </svg>
-                        <span>{isMatrixOpen ? 'Đóng ma trận' : 'Mở ma trận'}</span>
+                        <span>{isMatrixOpen ? 'Thu gọn ma trận' : 'Hiện ma trận'}</span>
                       </button>
                     </div>
 
@@ -359,25 +358,19 @@ function RightPanel({
                     />
                   </div>
 
-                  {/* Cột phải: Bảng Ma Trận Kỳ Quay Được Chọn (Chỉ render khi isMatrixOpen là true) */}
+                  {/* Cột phải: Bảng Ma Trận Kỳ Quay Được Chọn */}
                   {isMatrixOpen && (
-                    <>
-                      <div 
-                        className="matrix-drawer-backdrop" 
-                        onClick={() => setIsMatrixOpen(false)}
+                    <div className="preview-matrix-column">
+                      <SideMatrixPanel
+                        game={game}
+                        currentDraw={activeDraw}
+                        sortedDraws={sortedDraws}
+                        onSelectDrawId={setSelectedDrawId}
+                        absenceMap={absencesMap}
+                        statsConfig={statsConfigV2}
+                        onClose={() => setIsMatrixOpen(false)}
                       />
-                      <div className="preview-matrix-column matrix-drawer-mode">
-                        <SideMatrixPanel
-                          game={game}
-                          currentDraw={activeDraw}
-                          sortedDraws={sortedDraws}
-                          onSelectDrawId={setSelectedDrawId}
-                          absenceMap={absencesMap}
-                          statsConfig={statsConfigV2}
-                          onClose={() => setIsMatrixOpen(false)}
-                        />
-                      </div>
-                    </>
+                    </div>
                   )}
                 </div>
               ) : activeTab === 'stats' ? (
