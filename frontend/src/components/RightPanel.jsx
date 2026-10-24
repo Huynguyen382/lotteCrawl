@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DrawTable from './DrawTable';
 import MobileCards from './MobileCards';
@@ -6,7 +6,7 @@ import StatsPanel from './StatsPanel';
 import TrendAnalysisPanel from './TrendAnalysisPanel';
 import PredictionPanel from './PredictionPanel';
 import PredictionV2Panel from './PredictionV2Panel';
-import ResultsMatrixCollapse from './ResultsMatrixCollapse';
+import SideMatrixPanel from './SideMatrixPanel';
 
 function RightPanel({
   activeTab,
@@ -32,6 +32,93 @@ function RightPanel({
   setPredictionTicketCountV2
 }) {
   const [expandedRowIds, setExpandedRowIds] = useState(new Set());
+  const [selectedDrawId, setSelectedDrawId] = useState(null);
+
+  // Danh sách các kỳ quay đảo ngược để hiển thị mới nhất ở trên
+  const sortedDraws = useMemo(() => {
+    if (!filteredResults || filteredResults.length === 0) return [];
+    return filteredResults.slice().reverse();
+  }, [filteredResults]);
+
+  // Kỳ quay đang được chọn (Active Draw cho Ma Trận bên phải)
+  const activeDraw = useMemo(() => {
+    if (sortedDraws.length === 0) return null;
+    if (selectedDrawId) {
+      const found = sortedDraws.find(d => d.drawId === selectedDrawId);
+      if (found) return found;
+    }
+    return sortedDraws[0];
+  }, [sortedDraws, selectedDrawId]);
+
+  // Tự động chọn kỳ đầu tiên khi danh sách kết quả hoặc game thay đổi
+  useEffect(() => {
+    if (sortedDraws.length > 0) {
+      if (!selectedDrawId || !sortedDraws.some(d => d.drawId === selectedDrawId)) {
+        setSelectedDrawId(sortedDraws[0].drawId);
+      }
+    }
+  }, [sortedDraws, selectedDrawId]);
+
+  // Map chu kỳ vắng mặt cho từng con số
+  const maxNum = game === '645' ? 45 : (game === '655' ? 55 : 35);
+  const absencesMap = useMemo(() => {
+    if (!visibleResults || visibleResults.length === 0) return {};
+    const map = {};
+    const reversed = [...visibleResults].sort((a, b) => b.drawId - a.drawId);
+    const checkLength = game === '535' ? 5 : 6;
+    for (let i = 1; i <= maxNum; i++) {
+      const idx = reversed.findIndex(draw => {
+        const mainNums = draw.numbers ? draw.numbers.slice(0, checkLength).map(n => parseInt(n, 10)) : [];
+        return mainNums.includes(i);
+      });
+      map[i] = idx !== -1 ? idx : visibleResults.length;
+    }
+    return map;
+  }, [visibleResults, game, maxNum]);
+
+  // Điều hướng bằng các phím mũi tên bàn phím (ArrowUp, ArrowDown, ArrowLeft, ArrowRight)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Bỏ qua nếu người dùng đang nhập vào ô tìm kiếm hoặc form
+      const tagName = e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '';
+      if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
+        return;
+      }
+
+      if (sortedDraws.length === 0 || !activeDraw) return;
+
+      const currentIndex = sortedDraws.findIndex(d => d.drawId === activeDraw.drawId);
+      if (currentIndex === -1) return;
+
+      // Phím Mũi tên Xuống hoặc Phải -> Kỳ tiếp theo trong bảng (cũ hơn)
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (currentIndex < sortedDraws.length - 1) {
+          const nextDraw = sortedDraws[currentIndex + 1];
+          setSelectedDrawId(nextDraw.drawId);
+          const el = document.getElementById(`draw-row-${nextDraw.drawId}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      } 
+      // Phím Mũi tên Lên hoặc Trái -> Kỳ phía trước trong bảng (mới hơn)
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (currentIndex > 0) {
+          const prevDraw = sortedDraws[currentIndex - 1];
+          setSelectedDrawId(prevDraw.drawId);
+          const el = document.getElementById(`draw-row-${prevDraw.drawId}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sortedDraws, activeDraw]);
 
   const handleToggleRowExpand = (drawId) => {
     setExpandedRowIds((prev) => {
@@ -143,94 +230,105 @@ function RightPanel({
           >
             {visibleResults.length > 0 ? (
               activeTab === 'preview' ? (
-                <>
-                  {/* Search Box */}
-                  <div className="search-container" style={{ marginBottom: '16px', padding: '0 4px' }}>
-                    <div className="input-group" style={{ position: 'relative', width: '100%' }}>
-                      <input
-                        type="text"
-                        placeholder="Tìm kiếm kỳ quay, ngày, số (ví dụ: 15) hoặc bộ số (ví dụ: 15 23 34)..."
-                        className="input-field"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        style={{ paddingLeft: '38px', width: '100%', minHeight: '44px' }}
-                      />
-                      <svg 
-                        width="18" 
-                        height="18" 
-                        viewBox="0 0 24 24" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="2.5" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round"
-                        style={{
-                          position: 'absolute',
-                          left: '12px',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          color: 'var(--text-muted)'
-                        }}
-                      >
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                      </svg>
-                      {searchQuery && (
-                        <button 
-                          onClick={() => setSearchQuery('')}
+                <div className="preview-split-layout">
+                  {/* Cột trái: Tìm kiếm + Bảng danh sách kỳ quay */}
+                  <div className="preview-table-column">
+                    {/* Search Box */}
+                    <div className="search-container" style={{ marginBottom: '16px', padding: '0 4px' }}>
+                      <div className="input-group" style={{ position: 'relative', width: '100%' }}>
+                        <input
+                          type="text"
+                          placeholder="Tìm kiếm kỳ quay, ngày, số (ví dụ: 15) hoặc bộ số (ví dụ: 15 23 34)..."
+                          className="input-field"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          style={{ paddingLeft: '38px', width: '100%', minHeight: '44px' }}
+                        />
+                        <svg 
+                          width="18" 
+                          height="18" 
+                          viewBox="0 0 24 24" 
+                          fill="none" 
+                          stroke="currentColor" 
+                          strokeWidth="2.5" 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round"
                           style={{
                             position: 'absolute',
-                            right: '12px',
+                            left: '12px',
                             top: '50%',
                             transform: 'translateY(-50%)',
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                            fontSize: '1.4rem',
-                            lineHeight: '1',
-                            padding: '4px'
+                            color: 'var(--text-muted)'
                           }}
                         >
-                          ×
-                        </button>
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        {searchQuery && (
+                          <button 
+                            onClick={() => setSearchQuery('')}
+                            style={{
+                              position: 'absolute',
+                              right: '12px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              fontSize: '1.4rem',
+                              lineHeight: '1',
+                              padding: '4px'
+                            }}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                      {searchQuery && (
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '8px', paddingLeft: '4px' }}>
+                          Tìm thấy <strong>{filteredResults.length}</strong> / {visibleResults.length} kỳ quay khớp điều kiện.
+                        </div>
                       )}
                     </div>
-                    {searchQuery && (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '8px', paddingLeft: '4px' }}>
-                        Tìm thấy <strong>{filteredResults.length}</strong> / {visibleResults.length} kỳ quay khớp điều kiện.
-                      </div>
-                    )}
+
+                    {/* Desktop View: Bảng kết quả (DrawTable) */}
+                    <DrawTable 
+                      game={game} 
+                      filteredResults={filteredResults} 
+                      calculateDeltas={calculateDeltas} 
+                      statsConfig={statsConfigV2}
+                      selectedDrawId={activeDraw?.drawId}
+                      onSelectDraw={setSelectedDrawId}
+                      expandedRowIds={expandedRowIds}
+                      onToggleRowExpand={handleToggleRowExpand}
+                    />
+
+                    {/* Mobile View: Thẻ kết quả (MobileCards) */}
+                    <MobileCards 
+                      game={game} 
+                      filteredResults={filteredResults} 
+                      calculateDeltas={calculateDeltas} 
+                      statsConfig={statsConfigV2}
+                      selectedDrawId={activeDraw?.drawId}
+                      onSelectDraw={setSelectedDrawId}
+                      expandedRowIds={expandedRowIds}
+                      onToggleRowExpand={handleToggleRowExpand}
+                    />
                   </div>
 
-                  {/* Collapsible Number Matrix (1-45 MEGA / 1-55 POWER - 8 numbers per row) */}
-                  <ResultsMatrixCollapse 
-                    game={game} 
-                    results={filteredResults}
-                    onToggleAll={handleToggleAllRows}
-                    allRowsExpanded={filteredResults.length > 0 && expandedRowIds.size === filteredResults.length}
-                  />
-
-                  {/* Desktop View */}
-                  <DrawTable 
-                    game={game} 
-                    filteredResults={filteredResults} 
-                    calculateDeltas={calculateDeltas} 
-                    statsConfig={statsConfigV2}
-                    expandedRowIds={expandedRowIds}
-                    onToggleRowExpand={handleToggleRowExpand}
-                  />
-
-                  {/* Mobile View */}
-                  <MobileCards 
-                    game={game} 
-                    filteredResults={filteredResults} 
-                    calculateDeltas={calculateDeltas} 
-                    statsConfig={statsConfigV2}
-                    expandedRowIds={expandedRowIds}
-                    onToggleRowExpand={handleToggleRowExpand}
-                  />
-                </>
+                  {/* Cột phải: Bảng Ma Trận Kỳ Quay Được Chọn */}
+                  <div className="preview-matrix-column">
+                    <SideMatrixPanel
+                      game={game}
+                      currentDraw={activeDraw}
+                      sortedDraws={sortedDraws}
+                      onSelectDrawId={setSelectedDrawId}
+                      absenceMap={absencesMap}
+                      statsConfig={statsConfigV2}
+                    />
+                  </div>
+                </div>
               ) : activeTab === 'stats' ? (
                 <StatsPanel 
                   game={game} 

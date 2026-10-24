@@ -7,6 +7,8 @@ function MobileCards({
   filteredResults, 
   calculateDeltas, 
   statsConfig,
+  selectedDrawId,
+  onSelectDraw,
   expandedRowIds,
   onToggleRowExpand 
 }) {
@@ -301,6 +303,11 @@ function MobileCards({
   return (
     <div className="mobile-only mobile-cards-container">
       <style>{`
+        .selected-mobile-card {
+          border: 1px solid var(--primary) !important;
+          background: rgba(230, 57, 70, 0.12) !important;
+          box-shadow: 0 4px 16px rgba(230, 57, 70, 0.2) !important;
+        }
         .draw-id-cell {
           position: relative;
           cursor: help;
@@ -384,10 +391,17 @@ function MobileCards({
       `}</style>
       {filteredResults.slice().reverse().map((draw) => {
         const { currentSum, sumDiff, numDeltas } = calculateDeltas(draw);
+        const isSelected = draw.drawId === selectedDrawId;
+
         if (game === '645') {
           const jackpot = draw.prizes.find(p => p.name.toLowerCase().includes('jackpot')) || { valueStr: '0', count: 0 };
           return (
-            <div key={draw.drawId} className="mobile-draw-card glass-panel">
+            <div 
+              key={draw.drawId} 
+              className={`mobile-draw-card glass-panel ${isSelected ? 'selected-mobile-card' : ''}`}
+              onClick={() => onSelectDraw && onSelectDraw(draw.drawId)}
+              style={{ cursor: 'pointer' }}
+            >
               <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {renderDrawIdSpan(draw)}
@@ -495,7 +509,12 @@ function MobileCards({
           const jp1 = draw.prizes.find(p => p.name.includes('Jackpot 1')) || { valueStr: '0', count: 0 };
           const jp2 = draw.prizes.find(p => p.name.includes('Jackpot 2')) || { valueStr: '0', count: 0 };
           return (
-            <div key={draw.drawId} className="mobile-draw-card glass-panel">
+            <div 
+              key={draw.drawId} 
+              className={`mobile-draw-card glass-panel ${isSelected ? 'selected-mobile-card' : ''}`}
+              onClick={() => onSelectDraw && onSelectDraw(draw.drawId)}
+              style={{ cursor: 'pointer' }}
+            >
               <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {renderDrawIdSpan(draw)}
@@ -619,7 +638,12 @@ function MobileCards({
           // game === '535'
           const jackpot = draw.prizes.find(p => p.name.includes('Độc Đắc')) || { valueStr: '0', count: 0 };
           return (
-            <div key={draw.drawId} className="mobile-draw-card glass-panel">
+            <div 
+              key={draw.drawId} 
+              className={`mobile-draw-card glass-panel ${isSelected ? 'selected-mobile-card' : ''}`}
+              onClick={() => onSelectDraw && onSelectDraw(draw.drawId)}
+              style={{ cursor: 'pointer' }}
+            >
               <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {renderDrawIdSpan(draw)}
